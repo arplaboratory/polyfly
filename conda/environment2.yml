@@ -1,0 +1,46 @@
+name: aerialgym_py38
+channels: [conda-forge]
+channel_priority: strict
+dependencies:
+  - python=3.8
+  - cmake=3.24.*
+  - ninja
+  - make
+  - pkg-config
+  - gcc=12.*
+  - gxx=12.*
+  - gfortran=12.*
+  - libgcc-ng=12.*
+  - libstdcxx-ng=12.*
+  - ncurses
+  - patchelf
+  - pip
+  # CUDA 12.1 runtime for PyTorch
+  - pytorch-cuda=12.1
+
+  # PyTorch 2.4.1 stack (CUDA 12.1 builds)
+  - pytorch=2.4.*
+  - torchvision=0.19.*
+  - torchaudio=2.4.*
+
+  # Build deps for PyTorch3D
+  - eigen
+  - git
+  
+  - tensorboard 
+  - scipy=1.10.1
+  - pandas
+  - casadi
+  - zarr
+
+variables:
+  CC: x86_64-conda-linux-gnu-cc
+  CXX: x86_64-conda-linux-gnu-c++
+  FC: x86_64-conda-linux-gnu-gfortran
+  CFLAGS: "-D_POSIX_C_SOURCE=200112L -include stdlib.h"
+  CMAKE_ARGS: "-DCMAKE_C_STANDARD=11"
+
+
+# mamba create -n aerialgym2 --yes --strict-channel-priority -c pytorch -c nvidia -c fvcore -c iopath -c pytorch3d -c conda-forge python=3.8 pytorch==2.4.1 torchvision torchaudio pytorch-cuda fvcore iopath pytorch3d
+
+

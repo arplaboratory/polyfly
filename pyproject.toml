@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "poly_fly"
+version = "0.1.0"
+description = "Tools for trajectory planning and control."
+readme = "README.md"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+license = "MIT"
+requires-python = ">=3.8"
+
+# If you rely on external libraries, list them here:
+dependencies = [
+    # "numpy>=1.26",
+]
+
+
+# --------------------------------------------------------------------
+# Setuptools configuration (src-layout)
+# --------------------------------------------------------------------
+[tool.setuptools]
+package-dir = { "" = "src" }   # tell setuptools the code lives in /src
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# --------------------------------------------------------------------
+# Black code-formatter settings (copied verbatim from your file)
+# --------------------------------------------------------------------
+[tool.black]
+line-length = 100
+target-version = ['py38']
+skip-string-normalization = true
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.mypy_cache
+  | \.venv
+  | build
+  | dist
+)/
+'''

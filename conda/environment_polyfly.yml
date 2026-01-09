@@ -1,0 +1,28 @@
+name: poly_fly
+channels:
+  - conda-forge
+  - pytorch
+dependencies:
+  - python=3.10
+  - cmake
+  - ninja
+  - scipy=1.10
+  - pandas
+  - casadi
+  - zarr
+  - tensorboard
+  - eigen
+  - git
+  - pytorch=2.4.1
+  - torchvision=0.19.0
+  - torchaudio=2.4.1
+  - cpuonly
+  - pyYAML
+  - matplotlib=3.7
+  - tk
+  - openai
+  - python-dotenv
+
+# mamba env create -f environment_polyfly.yml
+# export IPOPT_HESSIAN_APPROXIMATION="limited-memory"
+

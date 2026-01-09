@@ -1,0 +1,17 @@
+# --------------------------------------------------------------------
+# Black code-formatter settings (copied verbatim from your file)
+# --------------------------------------------------------------------
+[tool.black]
+line-length = 100
+target-version = ['py38']
+skip-string-normalization = true
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.mypy_cache
+  | \.venv
+  | build
+  | dist
+)/
+'''

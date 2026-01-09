@@ -1,0 +1,39 @@
+model:
+  policy:
+    state_encoder:
+      state_dim: 13
+      latent_dim: 64
+      hidden_dims: [128, 128]
+      activation: relu   # supports string or {name: <str>, params: {...}}
+    image_vae:
+      in_channels: 1
+      latent_dim: 128
+      hidden_dims: [32, 32, 32, 32, 32]
+      input_height: 64
+      input_width: 64
+      latent_mode: mu    # "mu" or "sample"
+    head:
+      hidden_dims: [256, 256]
+      activation: relu   # supports string or {name: <str>, params: {...}}
+    action_dim: 16 # actions are robot pos, payload pos, quat, robot vel, payload vel
+    horizon: 10
+    n_prediction_modes: 1
+    prediction_head:
+      num_linear_layers: 1
+    eps: 0.02
+    ae_loss_factor: 0.0
+    use_soft_assignment: False
+    use_rotation_mat: False
+
+training:
+  optimizer: adam       # adam | adamw | sgd
+  learning_rate: 10e-4
+  weight_decay: 0.0
+  batch_size: 1024
+  epochs: 500
+  seed: 42
+  lr_scheduler: step        # none | step | cosine | plateau
+  lr_decay_rate: 0.9      # gamma for step/plateau
+  lr_step_size: 20         # step size for step scheduler
+
+device: cuda

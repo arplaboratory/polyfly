@@ -1,0 +1,21 @@
+name: aerialgym
+channels:
+  - pytorch
+  - nvidia
+  - fvcore
+  - iopath
+  - pytorch3d
+  - conda-forge
+dependencies:
+  - python=3.8
+  - pytorch=2.4.1
+  - torchvision=0.20.0
+  - torchaudio=2.4.1
+  - pytorch-cuda=12.1
+  - fvcore=0.1.5.post20210915
+  - iopath=0.1.9
+  - pytorch3d=0.7.8
+  - gymnasium=0.29.1
+  - scipy=1.10.1
+
+# mamba create -n aerialgym2 --yes --strict-channel-priority -c pytorch -c nvidia -c fvcore -c iopath -c pytorch3d -c conda-forge python=3.8 pytorch==2.4.1 torchvision torchaudio pytorch-cuda fvcore iopath pytorch3d
