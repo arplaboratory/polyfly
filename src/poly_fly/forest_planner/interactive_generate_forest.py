@@ -295,13 +295,14 @@ def get_chatgpt_response(prompt, X_LENGTH=13, Y_WIDTH=3, START_X=0, START_Y=0, G
     client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     print("Getting response from GPT...")
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="gpt-4.1-mini",
         messages=[
             {"role": "system", "content": full_prompt},
             {"role": "user", "content": prompt},
         ]
     )
     print("Successfully got response from GPT")
+    print("GPT Response:\n", response)
     return response.choices[0].message.content
 
 

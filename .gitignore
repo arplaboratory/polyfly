@@ -1,0 +1,14 @@
+__pycache__/
+data/csvs/
+data/gifs/
+data/imgs/
+data/videos/
+data/zarr/
+data/depth/
+data/params/forests/*
+!data/params/forests/base.yaml
+*.egg-info/
+src/poly_fly/controller/c_generated_code
+src/poly_fly/c_generated_code
+
+.env

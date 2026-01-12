@@ -25,7 +25,13 @@ For the full method, results, and hardware validation, see the paper: [PolyFly: 
 
 ---
 
+## Important Notes 
+- By default, the code uses the MA57 solver. This is significantly faster than the default solvers. Refer to README_INSTALL_HSL on how to set this up. If you are unable to get access to this solver, comment out `ipopt.linear_solver": "ma57` in planner.py.
+
 ## Quick Start (Docker)
+
+Add the following to your .bashrc
+`export POLYFLY_DIR= <directory that contains polyfly>`
 
 Use Docker for the fastest setup and consistent environment:
 
@@ -52,14 +58,27 @@ OPENAI_API_KEY="my-openai-api-key"
 ./scripts/run_planner.sh --plot
 
 # Generate forests
-./scripts/run_generate_forest.sh -n 5
+./scripts/run_generate_forest.sh -n 5 --forest-type 0 --plot
 
-# Interactive forest generation
+# Generate an environment through GPT!
 ./scripts/run_interactive_forest.sh
+
+# When prompted, enter the description of the environment you'd like to create. For example, you can say 
+#'Use 10 small obstacles to create a letter X'
+# Refer to compose_gpt_prompt in interactive_generate_forest.py for information on the prompt engineering
 
 # Or run Python commands directly:
 cd /workspace
 python src/poly_fly/optimal_planner/planner.py --plot
+```
+
+Generate a obstacle course using a ChatGPT!
+```bash
+./scripts/run_interactive_forest.sh
+
+# When prompted, enter the description of the environment you'd like to create. For example, you can say 
+#'Use 10 small obstacles to create a letter X'
+# Refer to compose_gpt_prompt in interactive_generate_forest.py for information on the prompt engineering
 ```
 
 5) Exit the container

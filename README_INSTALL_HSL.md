@@ -1,3 +1,5 @@
+Get the coinhsl files at https://licences.stfc.ac.uk/product/coin-hsl (academic users get these solvers for free)
+
 git clone the repo https://github.com/coin-or-tools/ThirdParty-HSL
 
 get the hsl libraries 

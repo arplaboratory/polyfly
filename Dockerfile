@@ -36,6 +36,8 @@ RUN apt-get update && apt-get install -y sudo && \
     echo "mambauser ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
     apt-get clean
 
+RUN cd POLYFLY_DIR && pip install -e .
+
 # Configure X11 forwarding support
 ENV DISPLAY=${DISPLAY:-:0}
 ENV QT_X11_NO_MITSHM=1

@@ -42,6 +42,7 @@ docker run --rm -it \
     -v "$WORKSPACE_DIR:/workspace:rw" \
     -v /tmp/passwd.docker:/etc/passwd:ro \
     -v /tmp/group.docker:/etc/group:ro \
+    -v /usr/local/lib:/usr/local/lib:ro \
     --workdir /workspace \
     "$IMAGE_TAG" \
     bash -c 'export PYTHONPATH=/workspace:$PYTHONPATH && export PS1="poly_fly@docker:\w$ " && /bin/bash -i'

@@ -36,35 +36,50 @@ python create_video.py --fps 60 --speed 1.0 [--gif] [--ortho] [--no-video]
 
 from __future__ import annotations
 import argparse
-import torch
+import os
+import sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib import animation
 from matplotlib.widgets import Slider, Button
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from scipy.spatial import ConvexHull
-from scipy.spatial.transform import Rotation as R
+import yaml  # read optional sidecar params
+import random  # for random CSV sampling
 
+from poly_fly.utils.utils import MPC, dictToClass, yamlToDict
 from poly_fly.optimal_planner.polytopes import Obs, SquarePayload, Quadrotor
 import poly_fly.utils.plot as plotter
 from poly_fly.optimal_planner.planner import Planner
-from poly_fly.data_io.utils import ZARR_DIR, DEPTH_SCALE_FACTOR
-from poly_fly.data_io.zarr_io import load_zarr_folder
-from poly_fly.deep_poly_fly.model.policy import load_model_from_checkpoint
-from poly_fly.data_io.utils import load_normalization_stats, process_rotation_matrix
-from poly_fly.data_io.enums import DatasetKeys as DK
+from poly_fly.data_io.utils import (
+    load,
+    guess_yaml_from_csv,
+    find_base_dirs,
+    ZARR_DIR,
+)
+from poly_fly.data_io.enums import DatasetKeys as DK, AttrKeys
+
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ────────────────────────────────────────────────────────────────────────────────
+
+def newest_csv(csv_dir: Path) -> Path:
+    all_csv = list(csv_dir.rglob("*.csv"))
+    if not all_csv:
+        raise FileNotFoundError(f"No CSV files found under {csv_dir}")
+    return max(all_csv, key=lambda p: p.stat().st_mtime)
 
 def draw_obstacles(ax, params, obstacle_color='#708090', obstacle_alpha=0.2):
     """Face-by-face obstacle rendering like plot.plot_result."""
     collections = []
     if not hasattr(params, "obstacles"):
         return collections
-    for ob in params.obstacles.values():
+    for key in params.obstacles.keys():
+        ob = params.obstacles[key]
         box = Obs(ob["x"], ob["y"], ob["z"], ob["l"], ob["b"], ob["h"])
         verts = box.get_vertices()
         hull = ConvexHull(verts)
@@ -143,10 +158,10 @@ def update_dynamic_artists(artists, params, p_payload, p_quad, acc_payload):
     payload_poly.set_verts(p_faces)
 
     # quad: rotate then translate; rotation from planner's helper
-    rot_mat = Planner.compute_quadrotor_rotation_matrix_no_jrk(
+    R = Planner.compute_quadrotor_rotation_matrix_no_jrk(
         acc_payload, params, use_robot_rotation=True
     )
-    qv = (quad_shape @ rot_mat.T) + np.asarray(p_quad)[None, :]
+    qv = (quad_shape @ R.T) + np.asarray(p_quad)[None, :]
     qh = ConvexHull(qv)
     q_faces = [[qv[i] for i in simplex] for simplex in qh.simplices]
     quad_poly.set_verts(q_faces)
@@ -158,6 +173,22 @@ def update_dynamic_artists(artists, params, p_payload, p_quad, acc_payload):
     cable_line.set_data(xs, ys)
     cable_line.set_3d_properties(zs)
 
+
+def _choose_frame_indices_by_time(t, fps, speed=1.0):
+    """Return indices so that successive frames are ~1/(fps)*speed apart in time."""
+    t = np.asarray(t, dtype=float)
+    if t.size == 0:
+        return np.array([], dtype=int)
+    if t.size == 1:
+        return np.array([0], dtype=int)
+    dt_target = (1.0 / max(fps, 1e-6)) * max(speed, 1e-6)
+    t0, tN = t[0], t[-1]
+    frame_times = np.arange(t0, tN + 1e-9, dt_target)
+    idx = np.searchsorted(t, frame_times, side='left')
+    idx[idx >= t.size] = t.size - 1
+    return np.unique(np.concatenate(([0], idx, [t.size - 1]))).astype(int)
+
+
 def _nearest_time_index(t_array, t_val):
     """Return nearest index in t_array to t_val. If t_array is None or empty, return 0."""
     if t_array is None:
@@ -167,43 +198,111 @@ def _nearest_time_index(t_array, t_val):
         return 0
     return int(np.clip(np.abs(t - float(t_val)).argmin(), 0, t.size - 1))
 
-def _depth_frame_to_image(frame):
-    """
-    Convert a depth frame (float) to an 8-bit image for display.
-    Assumes frame is in [0,1] range; clips and scales to [0,255].
-    """
-    if frame is None:
-        return None
-    return (frame / DEPTH_SCALE_FACTOR * 255.0).astype(np.uint8)
-
 
 # ────────────────────────────────────────────────────────────────────────────────
 # Interactive viewers
 # ────────────────────────────────────────────────────────────────────────────────
 
-def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, policy_config=None, plot_step_size=5):
+def interactive_inspect(params, time, sol_x, sol_u, quad_pos, ortho=False, dpi=200):
+    """Single-trajectory viewer with a step slider and Play/Pause."""
+    fig = plt.figure(figsize=(10, 8), dpi=dpi)
+    ax = fig.add_subplot(111, projection="3d")
+
+    # Obstacles (static)
+    obs_list = draw_obstacles(ax, params)
+    for poly in obs_list:
+        ax.add_collection3d(poly)
+
+    set_axes_limits(ax, params, sol_x)
+
+    if ortho:
+        ax.view_init(elev=90, azim=-180)
+        try:
+            ax.set_proj_type('ortho')
+        except Exception:
+            pass
+
+    # Dynamic artists
+    artists = build_dynamic_artists(ax, params)
+
+    N = sol_x.shape[0]
+    t = np.asarray(time, dtype=float)
+
+    # Slider UI
+    ax_step = plt.axes([0.15, 0.07, 0.70, 0.03], facecolor='lightgoldenrodyellow')
+    s_idx = Slider(ax_step, 'step', 0, N - 1, valinit=0, valfmt="%0.0f")
+
+    # Play/Pause buttons
+    ax_play = plt.axes([0.88, 0.07, 0.05, 0.03])
+    ax_pause = plt.axes([0.88, 0.03, 0.05, 0.03])
+    b_play = Button(ax_play, 'Play')
+    b_pause = Button(ax_pause, 'Pause')
+    playing = {"on": False}
+
+    def draw_at(i):
+        i = int(np.clip(i, 0, N - 1))
+        pL = sol_x[i, 0:3]
+        aL = sol_x[i, 6:9]
+        pQ = quad_pos[i, :]
+        update_dynamic_artists(artists, params, pL, pQ, aL)
+        ax.set_title(f"t = {t[i]:.3f} s  (step {i+1}/{N})")
+        fig.canvas.draw_idle()
+
+    s_idx.on_changed(lambda val: draw_at(val))
+    b_play.on_clicked(lambda evt: playing.__setitem__("on", True))
+    b_pause.on_clicked(lambda evt: playing.__setitem__("on", False))
+
+    # Keyboard shortcuts: left/right to step, space to toggle play
+    def on_key(event):
+        i = int(round(s_idx.val))
+        if event.key == "right":
+            s_idx.set_val(min(i + 1, N - 1))
+        elif event.key == "left":
+            s_idx.set_val(max(i - 1, 0))
+        elif event.key == " ":
+            playing["on"] = not playing["on"]
+
+    fig.canvas.mpl_connect("key_press_event", on_key)
+
+    # Initial draw
+    draw_at(0)
+
+    # Simple timer-based autoplay
+    timer = fig.canvas.new_timer(interval=20)  # ~50 Hz loop
+
+    def on_timer(_):
+        if not playing["on"]:
+            return
+        i = int(round(s_idx.val))
+        if i >= N - 1:
+            playing["on"] = False
+            return
+        s_idx.set_val(i + 1)
+
+    timer.add_callback(on_timer, None)
+    timer.start()
+    plt.show()
+
+
+def interactive_multi_csv_inspect(datasets, ortho=False, dpi=200):
     """
-    Multi-trajectory viewer with a synced depth viewer.
+    Multi-trajectory viewer (no depth subplot).
     - datasets: list of dicts with keys:
         { 'name', 'params', 'time', 'sol_x', 'sol_u', 'quad_pos', 'path',
-          optional: 'depth_time', 'depth', 'future_robot_pos', 'future_payload_pos' }
-    Added:
-      plot_step_size: int > 0. Every plot_step_size time steps, plot the next
-        plot_step_size predicted horizon samples (mode 0) aligned on the time axis.
-        For time k we plot predicted[k, 0, 0:plot_step_size] at time indices k .. k+plot_step_size-1.
+          optional: 'future_robot_pos', 'future_payload_pos', 'robot_quat' }
     """
     fig = plt.figure(figsize=(10, 8), dpi=dpi)
     ax = fig.add_subplot(111, projection="3d")
 
-    # Depth/quaternion/rotation/velocity window state (persistent)
-    depth_fig = None
-    depth_ax = None
-    depth_im = None
-    depth_cbar = None
+    # Quaternion window state (persistent). Depth plotting removed.
+    depth_fig = None        # kept as handle for the external figure
+    depth_ax = None         # unused now, but kept to minimize surgery
+    data_im = None          # no longer used
+    depth_cbar = None       # no longer used
     quat_ax = None
-    rot_ax = None 
     vel_ax = None
     pvel_ax = None
+    quat_lines = []
 
     # UI axes
     ax_csv = plt.axes([0.15, 0.02, 0.70, 0.03], facecolor='lightgoldenrodyellow')
@@ -211,175 +310,71 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
     ax_play = plt.axes([0.88, 0.07, 0.05, 0.03])
     ax_pause = plt.axes([0.88, 0.03, 0.05, 0.03])
 
-    s_file = Slider(ax_csv, 'file', 0, len(datasets) - 1, valinit=0, valfmt="%0.0f")
+    s_csv = Slider(ax_csv, 'csv_selection', 0, len(datasets) - 1, valinit=0, valfmt="%0.0f")
     s_step = None
     b_play = Button(ax_play, 'Play')
     b_pause = Button(ax_pause, 'Pause')
 
-    if policy_nn:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        policy_model = load_model_from_checkpoint(
-            "/home/mrunal/Documents/poly_fly/data/zarr/models/forests/policy_ep0100.pth",
-            "/home/mrunal/Documents/poly_fly/src/poly_fly/deep_poly_fly/model/config.yaml",
-            device,
-        )
-    else:
-        policy_model = None
-
-    norm = None
-    if policy_model is not None:
-        use_rotation_mat = policy_model.use_rotation_mat
-        dict_mean, dict_std = load_normalization_stats()
-        keys = [
-            DK.PAYLOAD_VEL,
-            DK.ROBOT_VEL,
-            DK.ROBOT_GOAL_RELATIVE,
-            DK.ROT_MAT if use_rotation_mat else DK.ROBOT_QUAT,
-
-        ]
-        state_mean = np.concatenate([np.asarray(dict_mean[k]).ravel() for k in keys]).astype(np.float32)
-        state_std  = np.concatenate([np.asarray(dict_std[k]).ravel()  for k in keys]).astype(np.float32)
-        depth_mean = float(np.asarray(dict_mean[DK.DEPTH]))
-        depth_std = float(np.asarray(dict_std[DK.DEPTH]))
-
-        stats = {
-            "fut_pos": DK.FUTURE_ROBOT_POS,
-            "fut_quat": DK.FUTURE_QUATERNION,
-            "fut_rot_mat": DK.FUTURE_ROT_MAT,
-            "fut_payload_pos": DK.FUTURE_PAYLOAD_POS,
-            "fut_robot_vel": DK.FUTURE_ROBOT_VEL,
-            "fut_payload_vel": DK.FUTURE_PAYLOAD_VEL
-        }
-        norm = {
-            "state_mean": np.asarray(state_mean, dtype=np.float32),
-            "state_std":  np.asarray(state_std,  dtype=np.float32),
-            "depth_mean": np.asarray(depth_mean, dtype=np.float32),
-            "depth_std":  np.asarray(depth_std,  dtype=np.float32),
-        }
-        for name, key in stats.items():
-            norm[f"{name}_mean"] = np.asarray(dict_mean[key], dtype=np.float32)
-            norm[f"{name}_std"]  = np.asarray(dict_std[key],  dtype=np.float32)
-            
     state = {
         "csv_idx": 0,
         "artists": None,
         "obs_polys": [],
         "playing": False,
         "s_step": None,
-        "future_scatter": None,
-        "future_payload_scatter": None,
-        "predicted_robot_scatters": None,
-        "predicted_payload_scatters": None,
+        # NEW: scatter artists
+        "future_scatter": None,           # robot future
+        "future_payload_scatter": None,   # payload future
     }
 
-    if plot_step_size < 1:
-        plot_step_size = 1
+    def ensure_data_window(ds):
+        """
+        Create/refresh the external figure for quaternion visualization only.
+        Depth image plotting has been removed.
+        """
+        nonlocal depth_fig, depth_ax, data_im, depth_cbar, quat_ax, quat_lines, vel_ax, pvel_ax
 
-    def ensure_depth_window(ds):
-        nonlocal depth_fig, depth_ax, depth_im, depth_cbar, quat_ax, rot_ax, vel_ax, pvel_ax
+        qdata = ds.get("robot_quat", None)
 
-        dtime = ds.get(DK.DEPTH_TIME, ds.get(DK.TIME, None))
-        ddata = ds.get(DK.DEPTH, None)
-        qdata = ds.get(DK.ROBOT_QUAT, None)
-        rotdata = ds.get(DK.ROT_MAT, None)
-        vdata = ds.get(DK.ROBOT_VEL, None)
-        pvdata = ds.get(DK.PAYLOAD_VEL, None)
+        has_quat = qdata is not None and getattr(qdata, "shape", None) is not None and qdata.shape[-1] == 4
+        vdata = ds["sol_quad_x"][:, 3:6]
+        pvdata = ds["sol_x"][:, 3:6]
 
-        has_depth = ddata is not None and dtime is not None and len(dtime) > 0 and len(ddata) > 0
-
+        # import pdb; pdb.set_trace()
+        # Create persistent figure: keep 1x2 but only use the right subplot for quaternions.
         if depth_fig is None:
-            depth_fig, (depth_ax, quat_ax, rot_ax, vel_ax, pvel_ax) = plt.subplots(1, 5, figsize=(15, 4), dpi=dpi)
+            # depth_fig, (depth_ax, quat_ax) = plt.subplots(1, 1, figsize=(10, 4), dpi=dpi)
+            depth_fig, (quat_ax, vel_ax, pvel_ax) = plt.subplots(1, 3, figsize=(10, 4), dpi=dpi)
 
-        depth_ax.clear()
+        # Clear prior content
+        # depth_ax.clear()
         quat_ax.clear()
-        rot_ax.clear()
         vel_ax.clear()
         pvel_ax.clear()
-        depth_im = None
+        data_im = None
         if depth_cbar is not None:
             try:
                 depth_cbar.remove()
             except Exception:
                 pass
 
-        # Depth subplot (left)
-        if has_depth:
-            depth_ax.set_title("Depth")
-            depth_im = depth_ax.imshow(_depth_frame_to_image(np.asarray(ddata[0])), cmap='plasma', vmin=0, vmax=255)
-            cbar = depth_fig.colorbar(depth_im, ax=depth_ax, fraction=0.046, pad=0.04)
-            cbar.set_label("Depth (scaled 0-255)")
-            cbar.set_ticks([0, 64, 128, 192, 255])
-            depth_cbar = cbar
-            depth_ax.axis('off')
+        # Quaternion subplot (right)
+        quat_lines = []
+        if has_quat:
+            q = np.asarray(qdata)
+            labels = ["w", "x", "y", "z"]
+            colors = ["tab:purple", "tab:blue", "tab:orange", "tab:green"]
+            for j in range(4):
+                line, = quat_ax.plot(q[:, j], label=labels[j], color=colors[j], linewidth=1.2)
+                quat_lines.append(line)
+            quat_ax.set_title("Robot quaternion (all steps)")
+            quat_ax.set_xlabel("step")
+            quat_ax.set_ylabel("value")
+            quat_ax.grid(True, alpha=0.3)
+            quat_ax.legend(loc="best", fontsize=8)
         else:
-            depth_ax.set_title("No depth available")
-            depth_ax.text(0.5, 0.5, "No depth", ha="center", va="center", transform=depth_ax.transAxes)
-            depth_ax.axis('off')
-
-        # Quaternion subplot (index 1)
-        q = np.asarray(qdata)
-        labels = ["x", "y", "z", "w"]
-        colors = ["tab:purple", "tab:blue", "tab:orange", "tab:green"]
-        for j in range(4):
-            quat_ax.plot(q[:, j], label=labels[j], color=colors[j], linewidth=1.2)
-            # UPDATED predicted overlays (mode 0) every plot_step_size
-            if policy_model is not None and not policy_model.use_rotation_mat:
-                pquat = ds.get("predicted_quat_nn", None)
-                pquat_arr = np.asarray(pquat)
-                assert pquat_arr.ndim == 4 and pquat_arr.shape[-1] == 4, f"shape is {pquat_arr.shape}"
-                N = pquat_arr.shape[0]
-                for k in range(0, N, plot_step_size):
-                    seg_len = min(plot_step_size, N - k)
-                    # horizon slice 0:seg_len at time k
-                    pred_seg = pquat_arr[k, 0, 0:seg_len, j]
-                    t_idx = np.arange(k, k + seg_len)
-                    label_pred = f"{labels[j]}_pred" if k == 0 else None
-                    quat_ax.plot(
-                        t_idx,
-                        pred_seg,
-                        color=colors[j],
-                        linestyle="--",
-                        linewidth=1.0,
-                        alpha=0.6,
-                        label=label_pred,
-                    )
-        quat_ax.set_title("Robot quaternion (all steps)")
-        quat_ax.set_xlabel("step")
-        quat_ax.set_ylabel("value")
-        quat_ax.grid(True, alpha=0.3)
-        quat_ax.legend(loc="best", fontsize=8)
-
-        # Rotation 6D subplot (index 2)
-        r6 = np.asarray(rotdata)
-        labels_6 = [f"r6d_{i+1}" for i in range(6)]
-        colors_6 = ["tab:red", "tab:blue", "tab:orange", "tab:green", "tab:purple", "tab:brown"]
-        for j in range(6):
-            rot_ax.plot(r6[:, j], label=labels_6[j], color=colors_6[j], linewidth=1.2)
-            if policy_model is not None and policy_model.use_rotation_mat:
-                prot = ds.get("predicted_rot_mat_nn", None)
-                if prot is not None:
-                    prot_arr = np.asarray(prot)
-                    assert prot_arr.ndim == 4 and prot_arr.shape[-1] == 6
-                    N = prot_arr.shape[0]
-                    for k in range(0, N, plot_step_size):
-                        seg_len = min(plot_step_size, N - k)
-                        pred_seg = prot_arr[k, 0, 0:seg_len, j]
-                        t_idx = np.arange(k, k + seg_len)
-                        label_pred = f"{labels_6[j]}_pred" if k == 0 else None
-                        rot_ax.plot(
-                            t_idx,
-                            pred_seg,
-                            color=colors_6[j],
-                            linestyle="--",
-                            linewidth=1.0,
-                            alpha=0.6,
-                            label=label_pred,
-                        )
-        rot_ax.set_title("Rotation (6D) components (all steps)")
-        rot_ax.set_xlabel("step")
-        rot_ax.set_ylabel("value")
-        rot_ax.grid(True, alpha=0.3)
-        rot_ax.legend(loc="best", fontsize=8)
+            quat_ax.set_title("No robot_quat available")
+            quat_ax.text(0.5, 0.5, "No quat", ha="center", va="center", transform=quat_ax.transAxes)
+            quat_ax.grid(False)
 
         # Robot velocity subplot (index 3)
         if vdata is not None:
@@ -388,26 +383,7 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
             vcolors = ["tab:cyan", "tab:pink", "tab:olive"]
             for j in range(3):
                 vel_ax.plot(v[:, j], label=vlabels[j], color=vcolors[j], linewidth=1.2)
-                if policy_model is not None:
-                    pvel = ds.get("predicted_robot_vel_nn", None)
-                    if pvel is not None:
-                        pvel_arr = np.asarray(pvel)
-                        assert pvel_arr.ndim == 4 and pvel_arr.shape[-1] == 3, f"shape is {pvel_arr.shape}"
-                        N = pvel_arr.shape[0]
-                        for k in range(0, N, plot_step_size):
-                            seg_len = min(plot_step_size, N - k)
-                            pred_seg = pvel_arr[k, 0, 0:seg_len, j]
-                            t_idx = np.arange(k, k + seg_len)
-                            label_pred = f"{vlabels[j]}_pred" if k == 0 else None
-                            vel_ax.plot(
-                                t_idx,
-                                pred_seg,
-                                color=vcolors[j],
-                                linestyle="--",
-                                linewidth=1.0,
-                                alpha=0.6,
-                                label=label_pred,
-                            )
+            
             vel_ax.set_title("Robot velocity (all steps)")
             vel_ax.set_xlabel("step")
             vel_ax.set_ylabel("m/s")
@@ -424,26 +400,7 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
             pvcolors = ["tab:blue", "tab:orange", "tab:green"]
             for j in range(3):
                 pvel_ax.plot(pv[:, j], label=pvlabels[j], color=pvcolors[j], linewidth=1.2)
-                if policy_model is not None:
-                    ppvel = ds.get("predicted_payload_vel_nn", None)
-                    if ppvel is not None:
-                        ppvel_arr = np.asarray(ppvel)
-                        assert ppvel_arr.ndim == 4 and ppvel_arr.shape[-1] == 3, f"shape is {ppvel_arr.shape}"
-                        N = ppvel_arr.shape[0]
-                        for k in range(0, N, plot_step_size):
-                            seg_len = min(plot_step_size, N - k)
-                            pred_seg = ppvel_arr[k, 0, 0:seg_len, j]
-                            t_idx = np.arange(k, k + seg_len)
-                            label_pred = f"{pvlabels[j]}_pred" if k == 0 else None
-                            pvel_ax.plot(
-                                t_idx,
-                                pred_seg,
-                                color=pvcolors[j],
-                                linestyle="--",
-                                linewidth=1.0,
-                                alpha=0.6,
-                                label=label_pred,
-                            )
+
             pvel_ax.set_title("Payload velocity (all steps)")
             pvel_ax.set_xlabel("step")
             pvel_ax.set_ylabel("m/s")
@@ -455,54 +412,48 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
 
         depth_fig.tight_layout()
         depth_fig.canvas.draw_idle()
-        return depth_im
+
+        # Nothing to return for depth image anymore; keep API but return None.
+        return None
 
     def clear_obstacles():
         for p in state["obs_polys"]:
             try:
                 p.remove()
-            except ValueError:
-                # Raised if the artist is not present in the Axes' container
+            except Exception:
                 pass
         state["obs_polys"] = []
 
     def clear_artists():
         a = state["artists"]
-        if a is not None:
-            # Remove main dynamic artists
-            for k in ["payload_poly", "quad_poly", "cable_line"]:
-                try:
-                    artist = a.get(k, None)
-                except AttributeError:
-                    artist = None
-                if artist is not None:
-                    try:
-                        artist.remove()
-                    except ValueError:
-                        # Raised if already detached / not in Axes' container
-                        pass
-
-        # Remove single scatter artists
-        for k in ["future_scatter", "future_payload_scatter"]:
-            sc = state.get(k, None)
-            if sc is not None:
-                try:
-                    sc.remove()
-                except ValueError:
-                    pass
-                state[k] = None
-
-        # Remove list-based scatter artists (predicted)
-        for k in ["predicted_robot_scatters", "predicted_payload_scatters"]:
-            lst = state.get(k, None)
-            if lst:
-                for sc in lst:
-                    try:
-                        sc.remove()
-                    except ValueError:
-                        pass
-            state[k] = []
-
+        if a is None:
+            pass
+        else:
+            try:
+                a["payload_poly"].remove()
+            except Exception:
+                pass
+            try:
+                a["quad_poly"].remove()
+            except Exception:
+                pass
+            try:
+                a["cable_line"].remove()
+            except Exception:
+                pass
+        # NEW: remove future scatters if present
+        if state["future_scatter"] is not None:
+            try:
+                state["future_scatter"].remove()
+            except Exception:
+                pass
+            state["future_scatter"] = None
+        if state["future_payload_scatter"] is not None:
+            try:
+                state["future_payload_scatter"].remove()
+            except Exception:
+                pass
+            state["future_payload_scatter"] = None
         state["artists"] = None
 
     def rebuild_step_slider(N):
@@ -512,157 +463,26 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
         state["s_step"] = s
         return s
 
-    def get_predicted_nn(ds):
-        time = ds.get(DK.TIME, ds.get(DK.DEPTH_TIME))
-        payload_vel = ds[DK.PAYLOAD_VEL]
-        robot_pos = ds[DK.ROBOT_POS]
-        robot_vel = ds[DK.ROBOT_VEL]
-        robot_quat = ds[DK.ROBOT_QUAT]
-        robot_goal_relative = ds[DK.ROBOT_GOAL_RELATIVE] 
-        robot_rot_mat = ds[DK.ROT_MAT]
-
-        n_modes = policy_model.n_prediction_modes
-        horizon = policy_model.horizon
-        use_rotation_mat = policy_model.use_rotation_mat
-        assert time.shape[0] == robot_pos.shape[0]
-        predicted_robot_pos_nn = np.zeros((robot_pos.shape[0], n_modes, horizon, 3), dtype=np.float32)
-        predicted_robot_quat_nn = np.zeros((robot_pos.shape[0], n_modes, horizon, 4), dtype=np.float32)
-        predicted_payload_pos_nn = np.zeros((robot_pos.shape[0], n_modes, horizon, 3), dtype=np.float32)
-        predicted_rot_mat_nn = np.zeros((robot_pos.shape[0], n_modes, horizon, 6), dtype=np.float32)
-        predicted_robot_vel_nn = np.zeros((robot_pos.shape[0], n_modes, horizon, 3), dtype=np.float32)
-        predicted_payload_vel_nn = np.zeros((robot_pos.shape[0], n_modes, horizon, 3), dtype=np.float32)
-
-        for i in range(robot_pos.shape[0]):
-            depth = ds[DK.DEPTH][i, :, :]
-            # depth[:, :] = 0
-            robot_vel_i = robot_vel[i, :]
-            payload_vel_i = payload_vel[i, :]
-            robot_quat_i = robot_quat[i, :]
-            robot_rot_mat_i = robot_rot_mat[i, :]
-            robot_goal_relative_i = robot_goal_relative[i, :]
-
-            if use_rotation_mat:
-                state_vec = np.concatenate([payload_vel_i, robot_vel_i, robot_goal_relative_i, robot_rot_mat_i], axis=0).astype(np.float32)
-            else:
-                state_vec = np.concatenate([payload_vel_i, robot_vel_i, robot_goal_relative_i, robot_quat_i], axis=0).astype(np.float32)
-
-            state_normalized = (state_vec - norm["state_mean"]) / (norm["state_std"] + 1e-6)
-            depth_normalized = (depth - norm["depth_mean"]) / (norm["depth_std"] + 1e-6)
-            
-            depth_tensor = torch.tensor(depth_normalized, dtype=torch.float32).unsqueeze(0).unsqueeze(0)  # (1, 1, H, W)
-            state_tensor = torch.tensor(state_normalized, dtype=torch.float32).unsqueeze(0)  # (1, D)
-            depth_tensor = depth_tensor.to(device)
-            state_tensor = state_tensor.to(device)
-            
-            # set depth to zero 
-            # depth_tensor[:, :, :] = 1
-            with torch.no_grad():
-                predicted_traj = policy_model(state_tensor, depth_tensor)[0]  # first output is predicted_traj
-                # predicted_traj: (1, n_modes, horizon, D)
-                pred = predicted_traj[0].cpu().numpy().astype(np.float32)  # (n_modes, H, D)
-
-            # Unnormalize only the parts we need using per-horizon stats
-            # Defensive check: ensure horizon matches stats shapes
-            if norm["fut_pos_mean"].shape[0] != horizon or norm["fut_quat_mean"].shape[0] != horizon:
-                raise ValueError(f"Future stats horizon mismatch: stats H_pos={norm['fut_pos_mean'].shape[0]}, "
-                                 f"H_quat={norm['fut_quat_mean'].shape[0]}, model H={horizon}")
-
-            # Position: [:, :, :3], Quaternion: [:, :, 3:7]
-            pred_pos = pred[:, :, :3]
-            pred_payload_pos = pred[:, :, 3:6]
-            un_pos = pred_pos * (norm["fut_pos_std"][None, :, :] + 1e-6) + norm["fut_pos_mean"][None, :, :]
-            un_payload_pos = pred_payload_pos * (norm["fut_payload_pos_std"][None, :, :] + 1e-6) + norm["fut_payload_pos_mean"][None, :, :]
-
-            if use_rotation_mat:
-                pred_rot_mat = pred[:, :, 6:12] # (n_modes, H, 6)
-                un_rot_mat = pred_rot_mat * (norm["fut_rot_mat_std"][None, :, :] + 1e-6) + norm["fut_rot_mat_mean"][None, :, :]
-                
-                un_quat = np.zeros((pred.shape[0], pred.shape[1], 4), dtype=np.float32)
-                for j in range(pred.shape[0]):
-                    un_quat[j, :, :] = R.from_matrix((process_rotation_matrix(un_rot_mat[j, :, :]))).as_quat()
-            else:
-                pred_quat = pred[:, :, 6:10]
-                un_quat = pred_quat * (norm["fut_quat_std"][None, :, :] + 1e-6) + norm["fut_quat_mean"][None, :, :]
-
-            if use_rotation_mat:
-                pred_robot_vel = pred[:, :, 12:15]
-                pred_payload_vel = pred[:, :, 15:18]
-            else:
-                pred_robot_vel = pred[:, :, 10:13]
-                pred_payload_vel = pred[:, :, 13:16]
-            un_robot_vel = pred_robot_vel * (norm["fut_robot_vel_std"][None, :, :] + 1e-6) + norm["fut_robot_vel_mean"][None, :, :]
-            un_payload_vel = pred_payload_vel * (norm["fut_payload_vel_std"][None, :, :] + 1e-6) + norm["fut_payload_vel_mean"][None, :, :]  
-
-            predicted_robot_pos_nn[i, :, :, :] = un_pos
-            predicted_robot_quat_nn[i, :, :, :] = un_quat
-            predicted_payload_pos_nn[i, :, :, :] = un_payload_pos
-            predicted_robot_vel_nn[i, :, :, :] = un_robot_vel
-            predicted_payload_vel_nn[i, :, :, :] = un_payload_vel
-
-            if use_rotation_mat:
-                predicted_rot_mat_nn[i, :, :, :] = un_rot_mat
-        
-        # vectorized: world positions = relative + current pose
-        predicted_robot_pos_world_nn = predicted_robot_pos_nn + robot_pos[:, None, None, :]
-
-        predicted_payload_pos_world_nn = np.zeros_like(predicted_payload_pos_nn)
-        for i in range(robot_pos.shape[0]):
-            for j in range(n_modes):
-                for k in range(horizon):
-                    rot = R.from_quat(predicted_robot_quat_nn[i, j, k, :]).as_matrix()
-                    predicted_payload_pos_world_nn[i, j, k, :] = predicted_robot_pos_world_nn[i, j, k, :] + rot @ predicted_payload_pos_nn[i, j, k, :]
-
-        # Convert predicted positions from relative-to-current to world by adding current p
-        res = {
-            "predicted_robot_pos_nn": predicted_robot_pos_world_nn, #predicted_robot_pos_nn + robot_pos[:, None, None, :],
-            "predicted_robot_quat_nn": predicted_robot_quat_nn,
-            "predicted_payload_pos_nn": predicted_payload_pos_world_nn, #predicted_robot_pos_nn + robot_pos[:, None, None, :] + predicted_payload_pos_nn,
-            "predicted_rot_mat_nn": predicted_rot_mat_nn,
-            "predicted_robot_vel_nn": predicted_robot_vel_nn,
-            "predicted_payload_vel_nn": predicted_payload_vel_nn
-        }
-        return res 
-
     def apply_dataset(k):
-        """Rebuild scene for dataset k and (re)attach depth/quaternion window."""
+        """Rebuild scene for dataset k and (re)attach quaternion window (no depth)."""
+        nonlocal data_im
         state["csv_idx"] = k
         ds = datasets[k]
-        params = ds.get(DK.PARAMS, None)
-        time = ds.get(DK.TIME, ds.get(DK.DEPTH_TIME))
-        sol_x = ds.get(DK.SOL_X, None)
-        quad = ds.get(DK.ROBOT_POS, None)
-        future = ds.get(DK.FUTURE_ROBOT_POS_WORLD)
-        future_payload = ds.get(DK.FUTURE_PAYLOAD_POS_WORLD)
+        params = ds["params"]
+        time = ds["time"]
+        sol_x = ds["sol_x"]
+        quad = ds["quad_pos"]
+        future = ds.get("future_robot_pos")
+        future_payload = ds.get("future_payload_pos")
 
-        if policy_model is not None:
-            result = get_predicted_nn(ds)
-            ds.update({
-                "predicted_robot_pos_nn": result["predicted_robot_pos_nn"],
-                "predicted_payload_pos_nn": result["predicted_payload_pos_nn"],
-                "predicted_quat_nn": result["predicted_robot_quat_nn"],   # make available to ensure_depth_window
-                "predicted_rot_mat_nn": result["predicted_rot_mat_nn"],
-                "predicted_robot_vel_nn": result["predicted_robot_vel_nn"],
-                "predicted_payload_vel_nn": result["predicted_payload_vel_nn"],
-            })
-            
-        # Remove old scene elements
         clear_obstacles()
         clear_artists()
-        # Also remove any existing legend to avoid stacking legends
-        try:
-            leg = ax.get_legend()
-            if leg is not None:
-                leg.remove()
-        except Exception:
-            pass
 
-        # Obstacles for this dataset
         obs_list = draw_obstacles(ax, params)
         for poly in obs_list:
             ax.add_collection3d(poly)
         state["obs_polys"] = obs_list
 
-        # Axis + view
         set_axes_limits(ax, params, sol_x)
         if ortho:
             ax.view_init(elev=90, azim=-180)
@@ -671,10 +491,9 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
             except Exception:
                 pass
 
-        # New dynamic artists using this dataset's geometry
         state["artists"] = build_dynamic_artists(ax, params)
 
-        # NEW: add future position scatters (only if provided)
+        # Future scatters unchanged
         if isinstance(future, np.ndarray) and future.ndim == 3 and future.shape[2] == 3 and future.shape[0] > 0:
             pts0 = future[0]
             if pts0.size > 0:
@@ -683,7 +502,7 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
                     s=12, c="tab:blue", alpha=0.8, depthshade=True, label="future robot"
                 )
 
-        if isinstance(future_payload, np.ndarray) and future_payload.ndim == 3 and future_payload.shape[2] == 3 and future.shape[0] > 0:
+        if isinstance(future_payload, np.ndarray) and future_payload.ndim == 3 and future_payload.shape[2] == 3 and future_payload.shape[0] > 0:
             ppts0 = future_payload[0]
             if ppts0.size > 0:
                 state["future_payload_scatter"] = ax.scatter(
@@ -691,47 +510,10 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
                     s=12, c="tab:orange", alpha=0.8, depthshade=True, label="future payload"
                 )
 
-        # NEW (multi-mode predicted robot scatters)
-        pred_pos = ds.get("predicted_robot_pos_nn", None)
-        if isinstance(pred_pos, np.ndarray):
-            N, M, H, A = pred_pos.shape
-            markers = ["x", "v", "^", "s", "P", "*", "D", "o", "<", ">", "h"]  # up to 11 modes
-            assert N > 0 and M > 0 and H > 0 and A == 3
- 
-            cmap = plt.cm.get_cmap("viridis", M)
-            state["predicted_robot_scatters"] = []
-            for m in range(M):
-                pts = pred_pos[0, m, :, :]  # (H,3)
-                sc = ax.scatter(
-                    pts[:, 0], pts[:, 1], pts[:, 2],
-                    s=10, c=[cmap(m)], marker=markers[m], alpha=0.85,
-                    depthshade=True, label=f"pred robot m{m}"
-                )
-                state["predicted_robot_scatters"].append(sc)
-  
-            pred_payload = ds.get("predicted_payload_pos_nn", None)
-            assert isinstance(pred_payload, np.ndarray) and pred_payload.shape == (N, M, H, 3)
-            payload_cmap = plt.cm.get_cmap("plasma", M)
-            state["predicted_payload_scatters"] = []
-            for m in range(M):
-                ppts = pred_payload[0, m, :, :]  # (H,3)
-                scp = ax.scatter(
-                    ppts[:, 0], ppts[:, 1], ppts[:, 2],
-                    s=10, c=[payload_cmap(m)], marker=markers[m],
-                    alpha=0.7, depthshade=True, label=f"pred payload m{m}"
-                )
-                state["predicted_payload_scatters"].append(scp)
+        # Ensure only quaternion window is drawn
+        ensure_data_window(ds)
+        data_im = None  # explicitly no depth image
 
-            # dedupe legend
-            handles, labels = ax.get_legend_handles_labels()
-            assert handles
-            by_label = dict(zip(labels, handles))
-            ax.legend(by_label.values(), by_label.keys(), fontsize=7, loc="best")
-
-        # Ensure depth/quaternion window for this dataset (reuses one persistent figure)
-        nonlocal depth_im
-        depth_im = ensure_depth_window(ds)
-        # (Re)build step slider for this dataset length
         s = rebuild_step_slider(sol_x.shape[0])
 
         def draw_at(i):
@@ -744,47 +526,23 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
                 f"[{k+1}/{len(datasets)}] {ds['name']}  |  t={time[i]:.3f}s  (step {i+1}/{sol_x.shape[0]})"
             )
 
-            # Update future scatters only if they exist
+            # Future scatters unchanged
             if state.get("future_scatter", None) is not None and isinstance(future, np.ndarray) and i < future.shape[0]:
                 pts = future[i]
                 if pts.ndim == 2 and pts.shape[1] == 3 and pts.shape[0] > 0:
-                    state["future_scatter"]._offsets3d = (pts[:, 0], pts[:, 1], pts[:, 2])
+                    xs, ys, zs = pts[:, 0], pts[:, 1], pts[:, 2]
+                    state["future_scatter"]._offsets3d = (xs, ys, zs)
 
             if state.get("future_payload_scatter", None) is not None and isinstance(future_payload, np.ndarray) and i < future_payload.shape[0]:
                 ppts = future_payload[i]
                 if ppts.ndim == 2 and ppts.shape[1] == 3 and ppts.shape[0] > 0:
-                    state["future_payload_scatter"]._offsets3d = (ppts[:, 0], ppts[:, 1], ppts[:, 2])
+                    px, py, pz = ppts[:, 0], ppts[:, 1], ppts[:, 2]
+                    state["future_payload_scatter"]._offsets3d = (px, py, pz)
 
-            # UPDATED: per-mode horizon scatter refresh (points for current time i only)
-            pred_pos = ds.get("predicted_robot_pos_nn", None)
-            if state["predicted_robot_scatters"] and isinstance(pred_pos, np.ndarray):
-                if i < pred_pos.shape[0]:
-                    M = pred_pos.shape[1]
-                    for m, sc in enumerate(state["predicted_robot_scatters"]):
-                        if m < M:
-                            pts = pred_pos[i, m, :, :]  # (H,3)
-                            sc._offsets3d = (pts[:, 0], pts[:, 1], pts[:, 2])
-            # ADD: refresh payload scatters for current step
-            pred_payload = ds.get("predicted_payload_pos_nn", None)
-            if state["predicted_payload_scatters"] and isinstance(pred_payload, np.ndarray):
-                if i < pred_payload.shape[0]:
-                    M = pred_payload.shape[1]
-                    for m, scp in enumerate(state["predicted_payload_scatters"]):
-                        if m < M:
-                            ppts = pred_payload[i, m, :, :]  # (H,3)
-                            scp._offsets3d = (ppts[:, 0], ppts[:, 1], ppts[:, 2])
-
-            # Depth update only (quat is static per CSV)
-            if depth_im is not None and ds.get(DK.DEPTH, None) is not None:
-                di = _nearest_time_index(ds.get(DK.DEPTH_TIME, None), time[i])
-                depth_im.set_data(_depth_frame_to_image(np.asarray(ds[DK.DEPTH][di])))
-                if depth_fig is not None:
-                    depth_fig.canvas.draw_idle()
+            # Depth update removed – only 3D + quat now
             fig.canvas.draw_idle()
 
-        # Bind step slider to draw
         s.on_changed(lambda val: draw_at(val))
-        # Initial draw
         draw_at(0)
         fig.canvas.draw_idle()
 
@@ -798,7 +556,6 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
     b_play.on_clicked(on_play)
     b_pause.on_clicked(on_pause)
 
-    # Keyboard shortcuts: left/right to step, space to toggle play
     def on_key(event):
         s = state["s_step"]
         if s is None:
@@ -813,14 +570,13 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
 
     fig.canvas.mpl_connect("key_press_event", on_key)
 
-    def on_file_change(val):
+    def on_csv_change(val):
         k = int(np.clip(int(round(val)), 0, len(datasets) - 1))
         apply_dataset(k)
 
-    s_file.on_changed(on_file_change)
+    s_csv.on_changed(on_csv_change)
 
-    # Timer loop
-    timer = fig.canvas.new_timer(interval=20)  # ~50 Hz UI loop
+    timer = fig.canvas.new_timer(interval=20)
 
     def on_timer(_):
         if not state["playing"]:
@@ -837,12 +593,284 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
     timer.add_callback(on_timer, None)
     timer.start()
 
-    # Boot with dataset 0
     apply_dataset(0)
     plt.show()
 
+
+# ────────────────────────────────────────────────────────────────────────────────
+# Batch helpers and video writer
+# ────────────────────────────────────────────────────────────────────────────────
+
+def build_datasets_from_folder(folder_path: Path, args, limit=10):
+    """
+    Load every CSV in folder (recursive), compute quad positions.
+    Returns list of dicts: { 'name', 'params', 'time', 'sol_x', 'sol_u', 'quad_pos', 'path' }
+    """
+    base, csv_dir, params_dir = find_base_dirs()
+
+    if not folder_path.is_absolute():
+        folder_path = (csv_dir / folder_path).resolve()
+    if not folder_path.exists():
+        raise FileNotFoundError(f"CSV folder not found: {folder_path}")
+
+    # Gather candidates
+    all_csvs = sorted(folder_path.rglob("*.csv"))
+    if not all_csvs:
+        raise FileNotFoundError(f"No CSVs found in folder: {folder_path}")
+
+    if getattr(args, "combined", False) and len(all_csvs) > limit:
+        total = len(all_csvs)
+        all_csvs = random.sample(all_csvs, k=limit)
+        print(f"[MULTI-VIEW] --combined: randomly sampled {len(all_csvs)} CSVs from {total} total.")
+
+    datasets = []
+    for cp in all_csvs:
+        yaml_path = guess_yaml_from_csv(cp, params_dir) if not args.yaml else Path(args.yaml)
+        data = load(cp, yaml_path)
+        time = data["time"]
+        sol_x = data["sol_x"]
+        sol_u = data["sol_u"]
+        sol_quad_x = data["sol_quad_x"]
+        sol_robot_quat = data["sol_quad_quat"]
+        params = data["params"]
+
+        quad_pos = sol_quad_x[:, :3]
+
+        ds = dict(
+            name=cp.name,
+            params=params,
+            time=time,
+            sol_x=sol_x,
+            sol_u=sol_u,
+            quad_pos=quad_pos,
+            path=cp,
+            sol_quad_x=sol_quad_x,
+        )
+        ds["robot_quat"] = sol_robot_quat
+        datasets.append(ds)
+    return datasets
+
+def build_datasets_from_zarr_folder(zarr_path: Path, args, limit=10):
+    """
+    Load every trajectory in a Zarr dataset and package for the multi-view inspector.
+    Returns list of dicts: { 'name', 'params', 'time', 'sol_x', 'sol_u', 'quad_pos', 'path',
+                             optional: 'future_robot_pos', 'future_payload_pos' }
+    """
+    try:
+        import zarr
+    except Exception as e:
+        raise ImportError("Please install zarr and numcodecs: pip install zarr numcodecs") from e
+
+    if not zarr_path.exists():
+        raise FileNotFoundError(f"Zarr dataset not found: {zarr_path}")
+
+    res, trajs_grp, keys = load_dataset_zarr(str(zarr_path), limit=limit)
+
+    idxs = list(range(len(keys)))
+    if getattr(args, "combined", False) and len(idxs) > limit:
+        total = len(idxs)
+        idxs = sorted(random.sample(idxs, k=limit))
+        print(f"[MULTI-VIEW] --combined: randomly sampled {len(idxs)} trajs from {total} total.")
+
+    datasets = []
+    for i in idxs:
+        key = keys[i]
+        g = trajs_grp[key]
+        name = g.attrs.get("stem", key)
+
+        time, sol_x, sol_u, sol_quad_x, sol_quad_quat, payload_rpy, params, future_robot_pos, future_payload_pos = res[i]
+        quad_pos = sol_quad_x[:, :3]
+
+        ds = dict(
+            name=name,
+            params=params,
+            time=time,
+            sol_x=sol_x,
+            sol_u=sol_u,
+            quad_pos=quad_pos,
+            path=zarr_path,
+        )
+        ds["future_robot_pos"] = future_robot_pos
+        ds["future_payload_pos"] = future_payload_pos
+        datasets.append(ds)
+    return datasets
+
+def run_for_csv(csv_path: Path, args):
+    base, csv_dir, params_dir = find_base_dirs()
+
+    if not csv_path.is_absolute():
+        csv_path = (csv_dir / csv_path).resolve()
+    if not csv_path.exists():
+        raise FileNotFoundError(f"CSV not found: {csv_path}")
+
+    # Params: prefer sidecar next to the CSV; fallback to mapped YAML or --yaml
+    if args.yaml:
+        yaml_path = Path(args.yaml)
+        if not yaml_path.is_absolute():
+            yaml_path = (params_dir / yaml_path).resolve()
+        if not yaml_path.exists():
+            raise FileNotFoundError(f"YAML not found: {yaml_path}")
+    else:
+        yaml_path = guess_yaml_from_csv(csv_path, params_dir)
+    time, sol_x, sol_u, sol_quad_x, sol_quad_quat, payload_rpy, params = load(csv_path, yaml_path)
+
+    quad_pos = sol_quad_x[:, :3]
+
+    # Output path
+    if args.out:
+        out_path = Path(args.out)
+        if args.csvs_folder or args.csv_folder:
+            stem = csv_path.stem
+            out_path = out_path.with_name(out_path.stem + f"_{stem}").with_suffix(out_path.suffix)
+    else:
+        rel = csv_path.relative_to(find_base_dirs()[1])  # relative to csvs/
+        out_root = base / "videos"
+        out_path = (out_root / rel).with_suffix(".mp4")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Figure and axes
+    fig = plt.figure(figsize=(10, 8), dpi=args.dpi)
+    ax = fig.add_subplot(111, projection="3d")
+
+    # Obstacles (static)
+    obs_list = draw_obstacles(ax, params)
+    for poly in obs_list:
+        ax.add_collection3d(poly)
+
+    set_axes_limits(ax, params, sol_x)
+
+    # Orthographic / top-down option
+    if args.ortho:
+        ax.view_init(elev=90, azim=-180)
+        try:
+            ax.set_proj_type('ortho')
+        except Exception:
+            pass
+
+    # Dynamic artists
+    artists = build_dynamic_artists(ax, params)
+
+    # Time-decimate to match FPS/speed (skip points so frames ≈ total_time*fps/speed)
+    frame_idx = _choose_frame_indices_by_time(time, args.fps, args.speed)
+    t = np.asarray(time, dtype=float)[frame_idx]
+    dt = np.diff(t, prepend=t[0])
+    repeats = np.maximum(1, np.round((dt * args.fps) / max(args.speed, 1e-6)).astype(int))
+
+    # Select writer
+    writer = None
+    use_gif = args.gif
+    if not use_gif:
+        try:
+            writer = animation.FFMpegWriter(fps=args.fps)
+        except Exception:
+            use_gif = True
+    if use_gif:
+        writer = animation.PillowWriter(fps=args.fps)
+        out_path = out_path.with_suffix(".gif")
+
+    # Write video (unless disabled)
+    if not args.no_video:
+        print(
+            f"[INFO] Writing {'GIF' if use_gif else 'MP4'} to: {out_path} (fps={args.fps}, speed={args.speed})"
+        )
+        with writer.saving(fig, str(out_path), dpi=args.dpi):
+            for k in frame_idx:
+                pL = sol_x[k, 0:3]
+                aL = sol_x[k, 6:9]
+                pQ = quad_pos[k, :]
+                update_dynamic_artists(artists, params, pL, pQ, aL)
+                for _ in range(int(repeats[np.where(frame_idx == k)[0][0]])):
+                    writer.grab_frame()
+        print(f"[DONE] Saved: {out_path}")
+
+    # Interactive inspect if requested
+    if args.inspect or getattr(args, "inspect_folder", False):
+        plt.close(fig)
+        interactive_inspect(params, time, sol_x, sol_u, quad_pos, ortho=args.ortho, dpi=args.dpi)
+    else:
+        plt.close(fig)
+
+def run_for_zarr(zarr_path: Path, args):
+    # Load first trajectory by default
+    if not zarr_path.exists():
+        raise FileNotFoundError(f"Zarr dataset not found: {zarr_path}")
+    res = load_dataset_zarr(str(zarr_path))
+    time, sol_x, sol_u, sol_quad_x, sol_quad_quat, payload_rpy, params, future_robot_pos, future_payload_pos = res[0]
+    quad_pos = sol_quad_x[:, :3]
+
+    base, csv_dir, params_dir = find_base_dirs()
+    # Output path
+    if args.out:
+        out_path = Path(args.out)
+    else:
+        out_root = base / "videos" / "from_zarr"
+        out_path = (out_root / zarr_path.stem).with_suffix(".mp4")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Figure and axes
+    fig = plt.figure(figsize=(10, 8), dpi=args.dpi)
+    ax = fig.add_subplot(111, projection="3d")
+
+    # Obstacles (likely none if params missing)
+    obs_list = draw_obstacles(ax, params)
+    for poly in obs_list:
+        ax.add_collection3d(poly)
+
+    set_axes_limits(ax, params, sol_x)
+
+    if args.ortho:
+        ax.view_init(elev=90, azim=-180)
+        try:
+            ax.set_proj_type('ortho')
+        except Exception:
+            pass
+
+    artists = build_dynamic_artists(ax, params)
+
+    frame_idx = _choose_frame_indices_by_time(time, args.fps, args.speed)
+    t = np.asarray(time, dtype=float)[frame_idx]
+    dt = np.diff(t, prepend=t[0])
+    repeats = np.maximum(1, np.round((dt * args.fps) / max(args.speed, 1e-6)).astype(int))
+
+    writer = None
+    use_gif = args.gif
+    if not use_gif:
+        try:
+            writer = animation.FFMpegWriter(fps=args.fps)
+        except Exception:
+            use_gif = True
+    if use_gif:
+        writer = animation.PillowWriter(fps=args.fps)
+        out_path = out_path.with_suffix(".gif")
+
+    if not args.no_video:
+        print(f"[INFO] Writing {'GIF' if use_gif else 'MP4'} to: {out_path} (fps={args.fps}, speed={args.speed})")
+        with writer.saving(fig, str(out_path), dpi=args.dpi):
+            for k in frame_idx:
+                pL = sol_x[k, 0:3]
+                aL = sol_x[k, 6:9]
+                pQ = quad_pos[k, :]
+                update_dynamic_artists(artists, params, pL, pQ, aL)
+                for _ in range(int(repeats[np.where(frame_idx == k)[0][0]])):
+                    writer.grab_frame()
+        print(f"[DONE] Saved: {out_path}")
+
+    if args.inspect:
+        plt.close(fig)
+        interactive_inspect(params, time, sol_x, sol_u, quad_pos, ortho=args.ortho, dpi=args.dpi)
+    else:
+        plt.close(fig)
+
 def main():
+    base, csv_dir, params_dir = find_base_dirs()
+
     ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--csv", type=str, default=None, help="Path to CSV under csvs/ (default: newest)"
+    )
+    ap.add_argument(
+        "--yaml", type=str, default=None, help="Override params YAML path (under params/)"
+    )
     ap.add_argument("--fps", type=float, default=60.0, help="Target FPS for output video")
     ap.add_argument(
         "--speed", type=float, default=1.0, help="Playback speed multiplier (1.0 = real time)"
@@ -869,6 +897,13 @@ def main():
         help="Skip writing video; only run interactive viewer if --inspect is set",
     )
     ap.add_argument(
+        "--csvs_folder",
+        type=str,
+        default=None,
+        help="Folder under csvs/ containing CSVs to process in batch",
+    )
+    ap.add_argument("--csv_folder", type=str, default=None, help="Alias for --csvs_folder")
+    ap.add_argument(
         "--inspect_folder",
         action="store_true",
         help="Apply --inspect to every CSV when processing a folder",
@@ -879,29 +914,11 @@ def main():
         help="With --csv_folder and --inspect, open one viewer with a csv_selection slider",
     )
     ap.add_argument(
-        "--depth",
-        action="store_true",
-        help="",
-    )
-    # NEW: Zarr dataset input
-    ap.add_argument(
         "--zarr",
         type=str,
         default=None,
         help="Path to a Zarr dataset directory; if set, visualize/load from Zarr instead of CSVs",
     )
-    ap.add_argument(
-        "--policy_nn",
-        action="store_true",
-        help="Enable policy neural net predictions (predicted_robot_pos_nn).",
-    )
-    ap.add_argument(
-        "--plot_step_size",
-        type=int,
-        default=5,
-        help="Interval and horizon length for plotting predicted trajectories (mode 0).",
-    )
-
     args = ap.parse_args()
 
     # NEW: Zarr mode (takes precedence)
@@ -910,16 +927,43 @@ def main():
         zpath = (ZARR_DIR / zpath).with_suffix(".zarr")
         # Multi-view over all Zarr trajectories
         if args.inspect and args.combined:
-            datasets = load_zarr_folder(zpath, args, limit=100, random_sample=True)
-            interactive_multi_inspect(
-                datasets,
-                ortho=args.ortho,
-                dpi=args.dpi,
-                policy_nn=args.policy_nn,
-                plot_step_size=args.plot_step_size,
-            )
-        else:
-            raise NotImplementedError("Currently, only --inspect --combined mode is supported with --zarr")
+            datasets = build_datasets_from_zarr_folder(zpath, args)
+            interactive_multi_csv_inspect(datasets, ortho=args.ortho, dpi=args.dpi)
+            return
+        # Default: render single (first) trajectory from Zarr
+        run_for_zarr(zpath, args)
+        return
+
+    # Folder mode
+    folder_arg = args.csvs_folder or args.csv_folder
+    if folder_arg:
+        folder_path = Path(folder_arg)
+        if not folder_path.is_absolute():
+            folder_path = (csv_dir / folder_path).resolve()
+        if not folder_path.exists():
+            raise FileNotFoundError(f"CSV folder not found: {folder_path}")
+
+        # NEW: One viewer with CSV selector (obstacles + trajectory swap)
+        if args.inspect and args.combined:
+            print(f"[MULTI-VIEW] Loading all trajectories from {folder_path}")
+            datasets = build_datasets_from_folder(folder_path, args)
+            interactive_multi_csv_inspect(datasets, ortho=args.ortho, dpi=args.dpi)
+            return
+
+        # Otherwise: regular batch per-file processing (and per-file inspect if requested)
+        csv_files = sorted(folder_path.rglob("*.csv"))
+        if not csv_files:
+            raise FileNotFoundError(f"No CSVs found in folder: {folder_path}")
+        print(f"[BATCH] Processing {len(csv_files)} CSVs under {folder_path}")
+        for i, cp in enumerate(csv_files, 1):
+            print(f"[{i}/{len(csv_files)}] {cp}")
+            run_for_csv(cp, args)
+        return
+
+    # Single-file path resolution (existing behavior)
+    csv_path = Path(args.csv) if args.csv else newest_csv(csv_dir)
+    run_for_csv(csv_path, args)
+
 
 if __name__ == "__main__":
     # Example usage 

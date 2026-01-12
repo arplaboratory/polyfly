@@ -666,8 +666,8 @@ class Planner:
         
         self.opti = ca.Opti()
         option = {
-            "verbose": False,
-            "ipopt.print_level": 0, # 5 for prints
+            "verbose": True,
+            "ipopt.print_level": 5, # 5 for prints
             "ipopt.max_iter": 1000,  # Increase the maximum number of iterations
             "ipopt.warm_start_init_point": "yes",
             "ipopt.warm_start_bound_push": 1e-3,
@@ -678,13 +678,12 @@ class Planner:
             "ipopt.fast_step_computation": "yes",
             "ipopt.acceptable_tol": 1e-4,
             "expand": True,
-            "ipopt.hessian_approximation": 'limited-memory',  
-            # "ipopt.linear_solver": "ma57",  # Use faster linear solver
-            # "ipopt.hsllib": "libhsl.so"
+            "ipopt.linear_solver": "ma57",  # Use faster linear solver
+            "ipopt.hsllib": "/usr/local/lib/libhsl.so"
             # "ipopt.mu_strategy": "adaptive",
             # "ipopt.limited_memory_update_type": "bfgs",  # More robust than SR1
             # "ipopt.mu_init: 0.1"
-        }
+        }        
         if warm:
             option["ipopt.mu_init"] = 1e-6
             option["ipopt.bound_relax_factor"] = 1e-9
