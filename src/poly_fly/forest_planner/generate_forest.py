@@ -336,6 +336,7 @@ class ForestGenerator:
         except OpenSetEmptyException:
             return None
 
+        print("test")
         if retry and not success:
             print("Retrying with more longer horizon")
             print(f"Old horizon: {self.horizon}")
