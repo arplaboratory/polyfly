@@ -1,5 +1,10 @@
 # PolyFly: Polytopic Optimal Planning for Collision-Free Cable-Suspended Aerial Payload Transportation
 
+[![PolyFly demo](cover_photo.png)](https://youtu.be/a6Wj28tFZEU)
+
+**▶️ [Video](https://youtu.be/a6Wj28tFZEU)**
+
+
 PolyFly is an optimal global planner for aerial transportation with a cable-suspended payload. Unlike conservative geometric over-approximations, PolyFly models each physical component - quadrotor, cable, and payload - as distinct polytopes, and incorporates orientation-aware geometry. Using duality, polytopic collision constraints are converted into smooth differentiable constraints, enabling efficient optimization and aggressive, collision-free trajectories in cluttered environments.
 
 For the full method, results, and hardware validation, see the paper: [PolyFly: Polytopic Optimal Planning for Collision-Free Cable-Suspended Aerial Payload Transportation](https://arxiv.org/pdf/2510.15226).
@@ -60,9 +65,6 @@ OPENAI_API_KEY="my-openai-api-key"
 # Generate forests
 ./scripts/run_generate_forest.sh -n 5 --forest-type 0 --plot
 
-# Generate an environment through GPT!
-./scripts/run_interactive_forest.sh
-
 # Or run Python commands directly:
 cd /workspace
 python src/poly_fly/optimal_planner/planner.py --plot
@@ -81,7 +83,7 @@ The obstacles are defined through yaml files located in the `data/params` direct
 3) Create a new environment yaml file, eg. `myexp/env_1.yaml`. See `experiments/maze_1.yaml` for an example. Update the `obstacles` field to define the obstacle positions. `payload_pos_init` can be set to `[]` if `use_global_planner=True`
 4) Run the solver script `./scripts/run_planner.sh --yaml myexp/env_1.yaml`
 
-## Generate an obstacle course using a ChatGPT
+## Generate an obstacle course using ChatGPT
 Want to use an LLM to generate obstacle positions?
 ```bash
 ./scripts/run_interactive_forest.sh
@@ -123,3 +125,4 @@ If you use this repository or build on PolyFly, please cite:
 
 - **Mrunal Sarvaiya** (Maintainer) — mrunaljsarvaiya@berkeley.edu  
 - **Rohit Kulkarni** (Maintainer) — rohit_kulkarni@berkeley.edu
+
