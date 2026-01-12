@@ -92,7 +92,12 @@ When prompted, enter the description of the environment you'd like to create. Fo
 `Use 10 small obstacles to create a letter X`.
 Refer to `compose_gpt_prompt` in `interactive_generate_forest.py` for insight on the prompt engineering.
 
+## Visualizing Results 
+To visualize the results in a given csv directory, eg. `csvs/myexp`, run 
+`python src/poly_fly/forest_planner/create_video.py --inspect --no-video --combined --csv_folder myexp`.
+This will open up a GUI to visualize all the csvs in the given directory. 
 
+<img src="gui.png" alt="GUI" width="600" />
 
 ## Docker Notes
 
