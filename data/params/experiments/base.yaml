@@ -1,0 +1,44 @@
+mass_quad: 0.715
+mass_load: 0.163
+dt: 0.1
+payload_radius: 0.05
+robot_radius: 0.1
+robot_height: 0.1
+cable_radius: 0.01
+cable_length: 0.567
+min_time: True
+use_global_planner: True 
+global_planner_robot_radius: 0.1 
+use_robot_rotation: True 
+constraint_min_dist: 6
+global_planner_step_size: 0.1
+
+Qi: [5.0, 5.0, 5.0, 0, 0, 0, 0, 0, 0]
+Qu: 5
+Q_dt: 600.0
+max_dt: 0.2
+min_dt: 0.01
+
+margin: 0.1
+
+payload_pos_init: []
+payload_vel_init: []
+payload_input_init: []
+
+initial_state: [0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0]
+end_state: [2.5, 0, 0.0, 
+        0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0,]
+
+
+state_max: [5, 3, 0.75, 5, 5, 5, 10, 10, 10]
+state_min: [-1, -3, 0, -5, -5, -5, -10, -10, -10]
+obstacles: 
+    wall1: {x: 1.0, y: 0.0, z: 0.0, l: 0.2, b: 2.0, h: 3.0}  # Vertical wall
+
+input_max: [10, 10, 10]
+input_min: [-10, -10, -10]
+
+horizon: 100

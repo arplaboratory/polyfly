@@ -1,0 +1,47 @@
+min_time: True 
+use_global_planner: True 
+payload_radius: 0.2
+robot_radius: 0.2
+global_planner_robot_radius: 0.02
+
+# *****************************
+# IMPORTANT 
+# Manually set robot_radius in glboal_planner.py 
+# robot_radius = 2 * 0.03
+# *****************************
+
+obstacles: 
+  # wall1 : {x: 1.0, y : 1.4, z: 0.42, l: 0.2, b: 2.55, h: 0.2}
+  # wall2 : {x: 1.0, y : -1.4, z: 0.42, l: 0.2, b: 2.55, h: 0.2 }
+  wall1 : {x: 1.00, y:  1.44, z: 0.44, l: 0.20, b: 2.7, h: 0.2}
+  wall2 : {x: 1.00, y: -1.44, z: 0.44, l: 0.20, b: 2.7, h: 0.2}
+payload_pos_init: [
+  [0, -1, 0],
+  [1, 0.2, 0],
+  [2, -1, 0]
+]
+
+Qi: [2, 2, 2, 0, 0, 0, 0, 0, 0]
+Q_dt: 8000.0 
+Qu: 10
+
+#Desired state of the payload
+end_state: [2.0, -1.0, 0.0, 
+        0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0,]
+
+#Initial state of the payload
+initial_state: [0.0, -1.0, 0.0,
+                0.0, 0.0, 0.0,
+                0.0, 0.0, 0.0]
+
+horizon : 50
+max_dt: 0.1
+
+#How close you want to clear the obstacle by
+margin: 0.02
+
+state_max : [5, 1.2, 0.5, 5, 5, 5, 3, 3, 3]
+state_min : [-5, -1.2, -0.8, -5, -5, -5, -3, -3, -3]
+
+tube_distance: 10
