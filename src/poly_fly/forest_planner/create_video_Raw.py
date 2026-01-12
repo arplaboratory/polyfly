@@ -59,6 +59,7 @@ from poly_fly.data_io.enums import DatasetKeys as DK
 # Helpers
 # ────────────────────────────────────────────────────────────────────────────────
 
+
 def draw_obstacles(ax, params, obstacle_color='#708090', obstacle_alpha=0.2):
     """Face-by-face obstacle rendering like plot.plot_result."""
     collections = []
@@ -158,6 +159,7 @@ def update_dynamic_artists(artists, params, p_payload, p_quad, acc_payload):
     cable_line.set_data(xs, ys)
     cable_line.set_3d_properties(zs)
 
+
 def _nearest_time_index(t_array, t_val):
     """Return nearest index in t_array to t_val. If t_array is None or empty, return 0."""
     if t_array is None:
@@ -166,6 +168,7 @@ def _nearest_time_index(t_array, t_val):
     if t.size == 0:
         return 0
     return int(np.clip(np.abs(t - float(t_val)).argmin(), 0, t.size - 1))
+
 
 def _depth_frame_to_image(frame):
     """
@@ -181,7 +184,10 @@ def _depth_frame_to_image(frame):
 # Interactive viewers
 # ────────────────────────────────────────────────────────────────────────────────
 
-def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, policy_config=None, plot_step_size=5):
+
+def interactive_multi_inspect(
+    datasets, ortho=False, dpi=200, policy_nn=False, policy_config=None, plot_step_size=5
+):
     """
     Multi-trajectory viewer with a synced depth viewer.
     - datasets: list of dicts with keys:
@@ -201,7 +207,7 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
     depth_im = None
     depth_cbar = None
     quat_ax = None
-    rot_ax = None 
+    rot_ax = None
     vel_ax = None
     pvel_ax = None
 
@@ -236,10 +242,13 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
             DK.ROBOT_VEL,
             DK.ROBOT_GOAL_RELATIVE,
             DK.ROT_MAT if use_rotation_mat else DK.ROBOT_QUAT,
-
         ]
-        state_mean = np.concatenate([np.asarray(dict_mean[k]).ravel() for k in keys]).astype(np.float32)
-        state_std  = np.concatenate([np.asarray(dict_std[k]).ravel()  for k in keys]).astype(np.float32)
+        state_mean = np.concatenate([np.asarray(dict_mean[k]).ravel() for k in keys]).astype(
+            np.float32
+        )
+        state_std = np.concatenate([np.asarray(dict_std[k]).ravel() for k in keys]).astype(
+            np.float32
+        )
         depth_mean = float(np.asarray(dict_mean[DK.DEPTH]))
         depth_std = float(np.asarray(dict_std[DK.DEPTH]))
 
@@ -249,18 +258,18 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
             "fut_rot_mat": DK.FUTURE_ROT_MAT_DELTAS,
             "fut_payload_pos": DK.FUTURE_PAYLOAD_POS,
             "fut_robot_vel": DK.FUTURE_ROBOT_VEL,
-            "fut_payload_vel": DK.FUTURE_PAYLOAD_VEL
+            "fut_payload_vel": DK.FUTURE_PAYLOAD_VEL,
         }
         norm = {
             "state_mean": np.asarray(state_mean, dtype=np.float32),
-            "state_std":  np.asarray(state_std,  dtype=np.float32),
+            "state_std": np.asarray(state_std, dtype=np.float32),
             "depth_mean": np.asarray(depth_mean, dtype=np.float32),
-            "depth_std":  np.asarray(depth_std,  dtype=np.float32),
+            "depth_std": np.asarray(depth_std, dtype=np.float32),
         }
         for name, key in stats.items():
             norm[f"{name}_mean"] = np.asarray(dict_mean[key], dtype=np.float32)
-            norm[f"{name}_std"]  = np.asarray(dict_std[key],  dtype=np.float32)
-            
+            norm[f"{name}_std"] = np.asarray(dict_std[key], dtype=np.float32)
+
     state = {
         "csv_idx": 0,
         "artists": None,
@@ -293,7 +302,9 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
         has_depth = ddata is not None and dtime is not None and len(dtime) > 0 and len(ddata) > 0
 
         if depth_fig is None:
-            depth_fig, (depth_ax, quat_ax, rot_ax, vel_ax, pvel_ax) = plt.subplots(1, 5, figsize=(15, 4), dpi=dpi)
+            depth_fig, (depth_ax, quat_ax, rot_ax, vel_ax, pvel_ax) = plt.subplots(
+                1, 5, figsize=(15, 4), dpi=dpi
+            )
 
         depth_ax.clear()
         quat_ax.clear()
@@ -310,7 +321,9 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
         # Depth subplot (left)
         if has_depth:
             depth_ax.set_title("Depth")
-            depth_im = depth_ax.imshow(_depth_frame_to_image(np.asarray(ddata[0])), cmap='plasma', vmin=0, vmax=255)
+            depth_im = depth_ax.imshow(
+                _depth_frame_to_image(np.asarray(ddata[0])), cmap='plasma', vmin=0, vmax=255
+            )
             cbar = depth_fig.colorbar(depth_im, ax=depth_ax, fraction=0.046, pad=0.04)
             cbar.set_label("Depth (scaled 0-255)")
             cbar.set_ticks([0, 64, 128, 192, 255])
@@ -318,7 +331,9 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
             depth_ax.axis('off')
         else:
             depth_ax.set_title("No depth available")
-            depth_ax.text(0.5, 0.5, "No depth", ha="center", va="center", transform=depth_ax.transAxes)
+            depth_ax.text(
+                0.5, 0.5, "No depth", ha="center", va="center", transform=depth_ax.transAxes
+            )
             depth_ax.axis('off')
 
         # Quaternion subplot (index 1)
@@ -331,7 +346,9 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
             if policy_model is not None and not policy_model.use_rotation_mat:
                 pquat = ds.get("predicted_quat_nn", None)
                 pquat_arr = np.asarray(pquat)
-                assert pquat_arr.ndim == 4 and pquat_arr.shape[-1] == 4, f"shape is {pquat_arr.shape}"
+                assert (
+                    pquat_arr.ndim == 4 and pquat_arr.shape[-1] == 4
+                ), f"shape is {pquat_arr.shape}"
                 N = pquat_arr.shape[0]
                 for k in range(0, N, plot_step_size):
                     seg_len = min(plot_step_size, N - k)
@@ -371,7 +388,7 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
                         seg_len = min(plot_step_size, N - k)
                         mode_idx = int(selected_mode[k]) if selected_mode is not None else 0
                         pred_seg = prot_arr[k, mode_idx, 0:seg_len, j]
-                        t_idx = np.arange(k+1, k + 1 + seg_len)
+                        t_idx = np.arange(k + 1, k + 1 + seg_len)
                         label_pred = f"{labels_6[j]}_pred" if k == 0 else None
                         rot_ax.plot(
                             t_idx,
@@ -399,7 +416,9 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
                     pvel = ds.get("predicted_robot_vel_nn", None)
                     if pvel is not None:
                         pvel_arr = np.asarray(pvel)
-                        assert pvel_arr.ndim == 4 and pvel_arr.shape[-1] == 3, f"shape is {pvel_arr.shape}"
+                        assert (
+                            pvel_arr.ndim == 4 and pvel_arr.shape[-1] == 3
+                        ), f"shape is {pvel_arr.shape}"
                         N = pvel_arr.shape[0]
                         for k in range(0, N, plot_step_size):
                             seg_len = min(plot_step_size, N - k)
@@ -436,7 +455,9 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
                     ppvel = ds.get("predicted_payload_vel_nn", None)
                     if ppvel is not None:
                         ppvel_arr = np.asarray(ppvel)
-                        assert ppvel_arr.ndim == 4 and ppvel_arr.shape[-1] == 3, f"shape is {ppvel_arr.shape}"
+                        assert (
+                            ppvel_arr.ndim == 4 and ppvel_arr.shape[-1] == 3
+                        ), f"shape is {ppvel_arr.shape}"
                         N = ppvel_arr.shape[0]
                         for k in range(0, N, plot_step_size):
                             seg_len = min(plot_step_size, N - k)
@@ -527,7 +548,7 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
         robot_pos = ds[DK.ROBOT_POS]
         robot_vel = ds[DK.ROBOT_VEL]
         robot_quat = ds[DK.ROBOT_QUAT]
-        robot_goal_relative = ds[DK.ROBOT_GOAL_RELATIVE] 
+        robot_goal_relative = ds[DK.ROBOT_GOAL_RELATIVE]
         robot_rot_mat = ds[DK.ROT_MAT]
         payload_pos_world = ds[DK.PAYLOAD_POS_WORLD]
         payload_pos = ds[DK.PAYLOAD_POS]
@@ -536,36 +557,79 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
         horizon = policy_model.horizon
         use_rotation_mat = policy_model.use_rotation_mat
         assert time.shape[0] == robot_pos.shape[0]
-        predicted_robot_pos_nn = np.zeros((robot_pos.shape[0], n_modes, horizon, 3), dtype=np.float32)
-        predicted_robot_quat_nn = np.zeros((robot_pos.shape[0], n_modes, horizon, 4), dtype=np.float32)
-        predicted_payload_pos_nn = np.zeros((robot_pos.shape[0], n_modes, horizon, 3), dtype=np.float32)
+        predicted_robot_pos_nn = np.zeros(
+            (robot_pos.shape[0], n_modes, horizon, 3), dtype=np.float32
+        )
+        predicted_robot_quat_nn = np.zeros(
+            (robot_pos.shape[0], n_modes, horizon, 4), dtype=np.float32
+        )
+        predicted_payload_pos_nn = np.zeros(
+            (robot_pos.shape[0], n_modes, horizon, 3), dtype=np.float32
+        )
         predicted_rot_mat_nn = np.zeros((robot_pos.shape[0], n_modes, horizon, 6), dtype=np.float32)
-        predicted_robot_vel_nn = np.zeros((robot_pos.shape[0], n_modes, horizon, 3), dtype=np.float32)
-        predicted_payload_vel_nn = np.zeros((robot_pos.shape[0], n_modes, horizon, 3), dtype=np.float32)
+        predicted_robot_vel_nn = np.zeros(
+            (robot_pos.shape[0], n_modes, horizon, 3), dtype=np.float32
+        )
+        predicted_payload_vel_nn = np.zeros(
+            (robot_pos.shape[0], n_modes, horizon, 3), dtype=np.float32
+        )
         logits_nn = np.zeros((robot_pos.shape[0], n_modes), dtype=np.float32)
 
-        
         for i in range(robot_pos.shape[0]):
             if i == 0:
                 print("relative goal:", robot_goal_relative[i, :])
-            
+
             if use_rotation_mat:
-                state_vec = np.concatenate([payload_pos[i, :] ,payload_vel[i, :], robot_vel[i, :], robot_goal_relative[i, :], robot_rot_mat[i, :]], axis=0).astype(np.float32)
+                state_vec = np.concatenate(
+                    [
+                        payload_pos[i, :],
+                        payload_vel[i, :],
+                        robot_vel[i, :],
+                        robot_goal_relative[i, :],
+                        robot_rot_mat[i, :],
+                    ],
+                    axis=0,
+                ).astype(np.float32)
             else:
-                state_vec = np.concatenate([payload_pos[i, :], payload_vel[i, :], robot_vel[i, :], robot_goal_relative[i, :], robot_quat[i, :]], axis=0).astype(np.float32)
+                state_vec = np.concatenate(
+                    [
+                        payload_pos[i, :],
+                        payload_vel[i, :],
+                        robot_vel[i, :],
+                        robot_goal_relative[i, :],
+                        robot_quat[i, :],
+                    ],
+                    axis=0,
+                ).astype(np.float32)
 
             state_normalized = (state_vec - norm["state_mean"]) / (norm["state_std"] + 1e-6)
-            depth_normalized = (ds[DK.DEPTH][i, :, :]   - norm["depth_mean"]) / (norm["depth_std"] + 1e-6)
-            
-            depth_tensor = torch.tensor(depth_normalized, dtype=torch.float32).unsqueeze(0).unsqueeze(0)  # (1, 1, H, W)
-            state_tensor = torch.tensor(state_normalized, dtype=torch.float32).unsqueeze(0)  # (1, D)
+            depth_normalized = (ds[DK.DEPTH][i, :, :] - norm["depth_mean"]) / (
+                norm["depth_std"] + 1e-6
+            )
+
+            depth_tensor = (
+                torch.tensor(depth_normalized, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+            )  # (1, 1, H, W)
+            state_tensor = torch.tensor(state_normalized, dtype=torch.float32).unsqueeze(
+                0
+            )  # (1, D)
             depth_tensor = depth_tensor.to(device)
             state_tensor = state_tensor.to(device)
-            
-            # set depth to zero 
+
+            # set depth to zero
             # depth_tensor[:, :, :] = 1
             with torch.no_grad():
-                predicted_traj, _, depth_recons, depth_input, depth_latent, depth_log_var, logits = policy_model(state_tensor, depth_tensor)  # first output is predicted_traj
+                (
+                    predicted_traj,
+                    _,
+                    depth_recons,
+                    depth_input,
+                    depth_latent,
+                    depth_log_var,
+                    logits,
+                ) = policy_model(
+                    state_tensor, depth_tensor
+                )  # first output is predicted_traj
                 # predicted_traj: (1, n_modes, horizon, D)
                 pred = predicted_traj[0].cpu().numpy().astype(np.float32)  # (n_modes, H, D)
 
@@ -573,26 +637,45 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
 
             # Unnormalize only the parts we need using per-horizon stats
             # Defensive check: ensure horizon matches stats shapes
-            if norm["fut_pos_mean"].shape[0] != horizon or norm["fut_quat_mean"].shape[0] != horizon:
-                raise ValueError(f"Future stats horizon mismatch: stats H_pos={norm['fut_pos_mean'].shape[0]}, "
-                                 f"H_quat={norm['fut_quat_mean'].shape[0]}, model H={horizon}")
+            if (
+                norm["fut_pos_mean"].shape[0] != horizon
+                or norm["fut_quat_mean"].shape[0] != horizon
+            ):
+                raise ValueError(
+                    f"Future stats horizon mismatch: stats H_pos={norm['fut_pos_mean'].shape[0]}, "
+                    f"H_quat={norm['fut_quat_mean'].shape[0]}, model H={horizon}"
+                )
 
             # Position: [:, :, :3], Quaternion: [:, :, 3:7]
             pred_pos = pred[:, :, :3]
             pred_payload_pos = pred[:, :, 3:6]
-            un_pos = pred_pos * (norm["fut_pos_std"][None, :, :] + 1e-6) + norm["fut_pos_mean"][None, :, :]
-            un_payload_pos = pred_payload_pos * (norm["fut_payload_pos_std"][None, :, :] + 1e-6) + norm["fut_payload_pos_mean"][None, :, :]
+            un_pos = (
+                pred_pos * (norm["fut_pos_std"][None, :, :] + 1e-6)
+                + norm["fut_pos_mean"][None, :, :]
+            )
+            un_payload_pos = (
+                pred_payload_pos * (norm["fut_payload_pos_std"][None, :, :] + 1e-6)
+                + norm["fut_payload_pos_mean"][None, :, :]
+            )
 
             if use_rotation_mat:
-                pred_rot_mat = pred[:, :, 6:12] # (n_modes, H, 6)
-                un_rot_mat = pred_rot_mat * (norm["fut_rot_mat_std"][None, :, :] + 1e-6) + norm["fut_rot_mat_mean"][None, :, :]
-                
+                pred_rot_mat = pred[:, :, 6:12]  # (n_modes, H, 6)
+                un_rot_mat = (
+                    pred_rot_mat * (norm["fut_rot_mat_std"][None, :, :] + 1e-6)
+                    + norm["fut_rot_mat_mean"][None, :, :]
+                )
+
                 un_quat = np.zeros((pred.shape[0], pred.shape[1], 4), dtype=np.float32)
                 for j in range(pred.shape[0]):
-                    un_quat[j, :, :] = R.from_matrix((process_rotation_matrix(un_rot_mat[j, :, :]))).as_quat()
+                    un_quat[j, :, :] = R.from_matrix(
+                        (process_rotation_matrix(un_rot_mat[j, :, :]))
+                    ).as_quat()
             else:
                 pred_quat = pred[:, :, 6:10]
-                un_quat = pred_quat * (norm["fut_quat_std"][None, :, :] + 1e-6) + norm["fut_quat_mean"][None, :, :]
+                un_quat = (
+                    pred_quat * (norm["fut_quat_std"][None, :, :] + 1e-6)
+                    + norm["fut_quat_mean"][None, :, :]
+                )
 
             if use_rotation_mat:
                 pred_robot_vel = pred[:, :, 12:15]
@@ -600,8 +683,14 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
             else:
                 pred_robot_vel = pred[:, :, 10:13]
                 pred_payload_vel = pred[:, :, 13:16]
-            un_robot_vel = pred_robot_vel * (norm["fut_robot_vel_std"][None, :, :] + 1e-6) + norm["fut_robot_vel_mean"][None, :, :]
-            un_payload_vel = pred_payload_vel * (norm["fut_payload_vel_std"][None, :, :] + 1e-6) + norm["fut_payload_vel_mean"][None, :, :]  
+            un_robot_vel = (
+                pred_robot_vel * (norm["fut_robot_vel_std"][None, :, :] + 1e-6)
+                + norm["fut_robot_vel_mean"][None, :, :]
+            )
+            un_payload_vel = (
+                pred_payload_vel * (norm["fut_payload_vel_std"][None, :, :] + 1e-6)
+                + norm["fut_payload_vel_mean"][None, :, :]
+            )
 
             # r = R.from_quat(robot_quat[i, :])  # (x,y,z,w)
             # yaw, pitch, roll  = r.as_euler('zyx', degrees=False)
@@ -617,8 +706,10 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
                     # predicted_robot_vel_nn[i, k, h, :] = un_robot_vel[k, h, :]
                     # predicted_payload_vel_nn[i, k, h, :] = un_payload_vel[k, h, :]
                     predicted_robot_vel_nn[i, k, h, :] = robot_vel[i, :] + un_robot_vel[k, h, :]
-                    predicted_payload_vel_nn[i, k, h, :] = payload_vel[i, :] + un_payload_vel[k, h, :]
-            
+                    predicted_payload_vel_nn[i, k, h, :] = (
+                        payload_vel[i, :] + un_payload_vel[k, h, :]
+                    )
+
                     predicted_payload_pos_nn[i, k, h, :] = un_payload_pos[k, h, :]
 
             if use_rotation_mat:
@@ -633,7 +724,9 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
 
         # vectorized: world positions = relative + current pose
         predicted_robot_pos_world_nn = predicted_robot_pos_nn + robot_pos[:, None, None, :]
-        predicted_payload_pos_world_nn = predicted_payload_pos_nn + payload_pos_world[:, None, None, :]
+        predicted_payload_pos_world_nn = (
+            predicted_payload_pos_nn + payload_pos_world[:, None, None, :]
+        )
 
         # predicted_payload_pos_world_nn = np.zeros_like(predicted_payload_pos_nn)
         # for i in range(robot_pos.shape[0]):
@@ -642,18 +735,18 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
         #             rot = R.from_quat(predicted_robot_quat_nn[i, j, k, :]).as_matrix()
         #             # predicted_payload_pos_world_nn[i, j, k, :] = predicted_robot_pos_world_nn[i, j, k, :] + rot @ np.array((0, 0, -0.567))
         #             predicted_payload_pos_world_nn[i, j, k, :] = predicted_payload_pos_nn[i, j, k, :] + payload_pos[:, None, None, :]
-                    
+
         # Convert predicted positions from relative-to-current to world by adding current p
         res = {
-            "predicted_robot_pos_nn": predicted_robot_pos_world_nn, #predicted_robot_pos_nn + robot_pos[:, None, None, :],
+            "predicted_robot_pos_nn": predicted_robot_pos_world_nn,  # predicted_robot_pos_nn + robot_pos[:, None, None, :],
             "predicted_robot_quat_nn": predicted_robot_quat_nn,
-            "predicted_payload_pos_nn": predicted_payload_pos_world_nn, #predicted_robot_pos_nn + robot_pos[:, None, None, :] + predicted_payload_pos_nn,
+            "predicted_payload_pos_nn": predicted_payload_pos_world_nn,  # predicted_robot_pos_nn + robot_pos[:, None, None, :] + predicted_payload_pos_nn,
             "predicted_rot_mat_nn": predicted_rot_mat_nn,
             "predicted_robot_vel_nn": predicted_robot_vel_nn,
             "predicted_payload_vel_nn": predicted_payload_vel_nn,
             "logits_nn": logits_nn,
         }
-        return res 
+        return res
 
     def apply_dataset(k):
         """Rebuild scene for dataset k and (re)attach depth/quaternion window."""
@@ -669,7 +762,7 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
         future_payload = ds.get(DK.FUTURE_PAYLOAD_POS_WORLD) + payload_world[:, None, :]
         quat = ds.get(DK.ROBOT_QUAT)
         goal_relative = ds.get(DK.ROBOT_GOAL_RELATIVE)
-        
+
         goal_world = np.zeros_like(goal_relative)
         for i in range(goal_relative.shape[0]):
             goal_world[i, :] = R.from_quat(quat[i]).apply(goal_relative[i, :])
@@ -679,7 +772,7 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
         ######
         # goal = ds.get(DK.ROBOT_GOAL)
         # tmp_goal_relative = goal - quad
-        # for i in range(tmp_goal_relative.shape[0]): 
+        # for i in range(tmp_goal_relative.shape[0]):
         #     tmp_goal_relative[i, :] = R.from_quat(quat[i]).apply(tmp_goal_relative[i, :])
 
         use_relative_positions = False
@@ -688,25 +781,29 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
             future = ds.get(DK.FUTURE_ROBOT_POS)
             future_payload = ds.get(DK.FUTURE_PAYLOAD_POS)
 
-            for i in range(future.shape[0]):    
+            for i in range(future.shape[0]):
                 for h in range(future.shape[1]):
                     future[i, h, :] = quats[i].apply(future[i, h, :])
-            
+
             future += quad[:, None, :]
             future_payload += future
 
         if policy_model is not None:
             result = get_predicted_nn(ds)
-            ds.update({
-                "predicted_robot_pos_nn": result["predicted_robot_pos_nn"],
-                "predicted_payload_pos_nn": result["predicted_payload_pos_nn"],
-                "predicted_quat_nn": result["predicted_robot_quat_nn"],   # make available to ensure_depth_window
-                "predicted_rot_mat_nn": result["predicted_rot_mat_nn"],
-                "predicted_robot_vel_nn": result["predicted_robot_vel_nn"],
-                "predicted_payload_vel_nn": result["predicted_payload_vel_nn"],
-                "logits_nn": result["logits_nn"]
-            })
-            
+            ds.update(
+                {
+                    "predicted_robot_pos_nn": result["predicted_robot_pos_nn"],
+                    "predicted_payload_pos_nn": result["predicted_payload_pos_nn"],
+                    "predicted_quat_nn": result[
+                        "predicted_robot_quat_nn"
+                    ],  # make available to ensure_depth_window
+                    "predicted_rot_mat_nn": result["predicted_rot_mat_nn"],
+                    "predicted_robot_vel_nn": result["predicted_robot_vel_nn"],
+                    "predicted_payload_vel_nn": result["predicted_payload_vel_nn"],
+                    "logits_nn": result["logits_nn"],
+                }
+            )
+
         # Remove old scene elements
         clear_obstacles()
         clear_artists()
@@ -737,38 +834,67 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
         state["artists"] = build_dynamic_artists(ax, params)
 
         # NEW: add future position scatters (only if provided)
-        if isinstance(future, np.ndarray) and future.ndim == 3 and future.shape[2] == 3 and future.shape[0] > 0:
+        if (
+            isinstance(future, np.ndarray)
+            and future.ndim == 3
+            and future.shape[2] == 3
+            and future.shape[0] > 0
+        ):
             pts0 = future[0]
             if pts0.size > 0:
                 state["future_scatter"] = ax.scatter(
-                    pts0[:, 0], pts0[:, 1], pts0[:, 2],
-                    s=12, c="tab:blue", alpha=0.8, depthshade=True, label="future robot"
+                    pts0[:, 0],
+                    pts0[:, 1],
+                    pts0[:, 2],
+                    s=12,
+                    c="tab:blue",
+                    alpha=0.8,
+                    depthshade=True,
+                    label="future robot",
                 )
 
-        if isinstance(future_payload, np.ndarray) and future_payload.ndim == 3 and future_payload.shape[2] == 3 and future.shape[0] > 0:
+        if (
+            isinstance(future_payload, np.ndarray)
+            and future_payload.ndim == 3
+            and future_payload.shape[2] == 3
+            and future.shape[0] > 0
+        ):
             ppts0 = future_payload[0]
             if ppts0.size > 0:
                 state["future_payload_scatter"] = ax.scatter(
-                    ppts0[:, 0], ppts0[:, 1], ppts0[:, 2],
-                    s=12, c="tab:orange", alpha=0.8, depthshade=True, label="future payload"
+                    ppts0[:, 0],
+                    ppts0[:, 1],
+                    ppts0[:, 2],
+                    s=12,
+                    c="tab:orange",
+                    alpha=0.8,
+                    depthshade=True,
+                    label="future payload",
                 )
 
         # Add a single red dot for the goal in world coordinates
         g0 = goal_world_pos
         state["goal_scatter"] = ax.scatter(
-            [g0[0]], [g0[1]], [g0[2]],
-            s=40, c="red", marker="o", alpha=0.95, depthshade=True, label="goal"
+            [g0[0]],
+            [g0[1]],
+            [g0[2]],
+            s=40,
+            c="red",
+            marker="o",
+            alpha=0.95,
+            depthshade=True,
+            label="goal",
         )
 
         # NEW (multi-mode predicted robot scatters)
         pred_pos = ds.get("predicted_robot_pos_nn", None)
         logits = ds.get("logits_nn", None)
-        selected_mode = np.argmax(logits, axis=1) 
+        selected_mode = np.argmax(logits, axis=1)
         if isinstance(pred_pos, np.ndarray):
             N, M, H, A = pred_pos.shape
             markers = ["x", "v", "^", "s", "P", "*", "D", "o", "<", ">", "h"]  # up to 11 modes
             assert N > 0 and M > 0 and H > 0 and A == 3
- 
+
             cmap = plt.cm.get_cmap("viridis", M)
             state["predicted_robot_scatters"] = []
             plot_selected_only = True
@@ -776,21 +902,33 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
                 m = selected_mode[0]
                 pts = pred_pos[0, m, :, :]  # (H,3)
                 sc = ax.scatter(
-                    pts[:, 0], pts[:, 1], pts[:, 2],
-                    s=15, c=[cmap(m)], marker=markers[m], alpha=0.9,
-                    depthshade=True, label=f"pred robot m{m} (selected)"
+                    pts[:, 0],
+                    pts[:, 1],
+                    pts[:, 2],
+                    s=15,
+                    c=[cmap(m)],
+                    marker=markers[m],
+                    alpha=0.9,
+                    depthshade=True,
+                    label=f"pred robot m{m} (selected)",
                 )
                 state["predicted_robot_scatters"].append(sc)
             else:
                 for m in range(M):
                     pts = pred_pos[0, m, :, :]  # (H,3)
                     sc = ax.scatter(
-                        pts[:, 0], pts[:, 1], pts[:, 2],
-                        s=10, c=[cmap(m)], marker=markers[m], alpha=0.85,
-                        depthshade=True, label=f"pred robot m{m}"
+                        pts[:, 0],
+                        pts[:, 1],
+                        pts[:, 2],
+                        s=10,
+                        c=[cmap(m)],
+                        marker=markers[m],
+                        alpha=0.85,
+                        depthshade=True,
+                        label=f"pred robot m{m}",
                     )
                     state["predicted_robot_scatters"].append(sc)
-  
+
             pred_payload = ds.get("predicted_payload_pos_nn", None)
             assert isinstance(pred_payload, np.ndarray) and pred_payload.shape == (N, M, H, 3)
             payload_cmap = plt.cm.get_cmap("plasma", M)
@@ -799,18 +937,30 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
                 m = selected_mode[0]
                 ppts = pred_payload[0, m, :, :]  # (H,3)
                 scp = ax.scatter(
-                    ppts[:, 0], ppts[:, 1], ppts[:, 2],
-                    s=15, c=[payload_cmap(m)], marker=markers[m],
-                    alpha=0.9, depthshade=True, label=f"pred payload m{m} (selected)"
+                    ppts[:, 0],
+                    ppts[:, 1],
+                    ppts[:, 2],
+                    s=15,
+                    c=[payload_cmap(m)],
+                    marker=markers[m],
+                    alpha=0.9,
+                    depthshade=True,
+                    label=f"pred payload m{m} (selected)",
                 )
                 state["predicted_payload_scatters"].append(scp)
             else:
                 for m in range(M):
                     ppts = pred_payload[0, m, :, :]  # (H,3)
                     scp = ax.scatter(
-                        ppts[:, 0], ppts[:, 1], ppts[:, 2],
-                        s=10, c=[payload_cmap(m)], marker=markers[m],
-                        alpha=0.7, depthshade=True, label=f"pred payload m{m}"
+                        ppts[:, 0],
+                        ppts[:, 1],
+                        ppts[:, 2],
+                        s=10,
+                        c=[payload_cmap(m)],
+                        marker=markers[m],
+                        alpha=0.7,
+                        depthshade=True,
+                        label=f"pred payload m{m}",
                     )
                     state["predicted_payload_scatters"].append(scp)
 
@@ -857,13 +1007,13 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
                     pass
 
             # draw as a 3D line constrained to Z = robot_z
-            yaw_line, = ax.plot(
+            (yaw_line,) = ax.plot(
                 [start_xy[0], end_xy[0]],
                 [start_xy[1], end_xy[1]],
-                [pQ[2],       pQ[2]],
+                [pQ[2], pQ[2]],
                 color="black",
                 linewidth=2.0,
-                alpha=0.9
+                alpha=0.9,
             )
             state["yaw_arrow"] = yaw_line
             # ------------------------------------------------------------------
@@ -873,15 +1023,27 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
             )
 
             # Update future scatters only if they exist
-            if state.get("future_scatter", None) is not None and isinstance(future, np.ndarray) and i < future.shape[0]:
+            if (
+                state.get("future_scatter", None) is not None
+                and isinstance(future, np.ndarray)
+                and i < future.shape[0]
+            ):
                 pts = future[i]
                 if pts.ndim == 2 and pts.shape[1] == 3 and pts.shape[0] > 0:
                     state["future_scatter"]._offsets3d = (pts[:, 0], pts[:, 1], pts[:, 2])
 
-            if state.get("future_payload_scatter", None) is not None and isinstance(future_payload, np.ndarray) and i < future_payload.shape[0]:
+            if (
+                state.get("future_payload_scatter", None) is not None
+                and isinstance(future_payload, np.ndarray)
+                and i < future_payload.shape[0]
+            ):
                 ppts = future_payload[i]
                 if ppts.ndim == 2 and ppts.shape[1] == 3 and ppts.shape[0] > 0:
-                    state["future_payload_scatter"]._offsets3d = (ppts[:, 0], ppts[:, 1], ppts[:, 2])
+                    state["future_payload_scatter"]._offsets3d = (
+                        ppts[:, 0],
+                        ppts[:, 1],
+                        ppts[:, 2],
+                    )
 
             # Update goal red dot position
             if state.get("goal_scatter", None) is not None:
@@ -974,6 +1136,7 @@ def interactive_multi_inspect(datasets, ortho=False, dpi=200, policy_nn=False, p
     apply_dataset(0)
     plt.show()
 
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fps", type=float, default=60.0, help="Target FPS for output video")
@@ -1052,10 +1215,13 @@ def main():
                 plot_step_size=args.plot_step_size,
             )
         else:
-            raise NotImplementedError("Currently, only --inspect --combined mode is supported with --zarr")
+            raise NotImplementedError(
+                "Currently, only --inspect --combined mode is supported with --zarr"
+            )
+
 
 if __name__ == "__main__":
-    # Example usage 
+    # Example usage
     # python create_video.py --inspect --no-video --combined --csv_folder forests
     # python create_video.py --inspect --no-video --combined --csv forests/forest_011_s3130833813.csv --yaml forests/forest_011_s3130833813.yaml
     main()

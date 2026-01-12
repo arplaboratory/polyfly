@@ -22,7 +22,9 @@ import matplotlib.pyplot as plt
 import openai
 
 from poly_fly.forest_planner.generate_forest import ForestGenerator, ObstacleGenerationException
-from poly_fly.forest_planner.forest_params import ForestParamsSmall  # NEW: use smaller obstacles for interactive regen
+from poly_fly.forest_planner.forest_params import (
+    ForestParamsSmall,
+)  # NEW: use smaller obstacles for interactive regen
 from poly_fly.optimal_planner.planner import (
     interpolate_distance,
 )
@@ -167,7 +169,9 @@ class ForestChooser:
 
         print_trajectory_info(sol_values, sol_opt, self.fg.planner)
 
-        t, x, u = interpolate_distance(self.fg.planner.params, sol_values, ds=0.25, append_zero=False)
+        t, x, u = interpolate_distance(
+            self.fg.planner.params, sol_values, ds=0.25, append_zero=False
+        )
         plotter.plot_result(
             self.fg.planner.params,
             x,
@@ -204,8 +208,8 @@ def csv_to_forest(csv_text: str, *, trunk_half_height=3.0):
     for x, y, w, h in reader:
         forest.append(
             dict(
-                x=float(x),   # centre-x
-                y=float(y),   # centre-y
+                x=float(x),  # centre-x
+                y=float(y),  # centre-y
                 z=0.0,
                 xl=float(w),  # width
                 yl=float(h),  # depth
@@ -262,6 +266,7 @@ def compose_gpt_prompt(X_LENGTH=13, Y_WIDTH=3, START_X=0, START_Y=0, GOAL_X=12, 
         MIN_GAP = 1.5
         """
 
+
 def get_chatgpt_response(prompt, X_LENGTH=13, Y_WIDTH=3, START_X=0, START_Y=0, GOAL_X=12, GOAL_Y=0):
     full_prompt = compose_gpt_prompt(X_LENGTH, Y_WIDTH, START_X, START_Y, GOAL_X, GOAL_Y)
     client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -271,7 +276,7 @@ def get_chatgpt_response(prompt, X_LENGTH=13, Y_WIDTH=3, START_X=0, START_Y=0, G
         messages=[
             {"role": "system", "content": full_prompt},
             {"role": "user", "content": prompt},
-        ]
+        ],
     )
     print("Successfully got response from GPT")
     return response.choices[0].message.content

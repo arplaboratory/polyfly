@@ -30,8 +30,17 @@ from pathlib import Path
 import sys
 import shutil
 
-from poly_fly.data_io.utils import save_csv_arrays, save_params, BASE_DIR, PARAMS_DIR, \
-    GIFS_DIR, CSV_DIR, IMG_DIR, DEPTH_DIR, ZARR_DIR
+from poly_fly.data_io.utils import (
+    save_csv_arrays,
+    save_params,
+    BASE_DIR,
+    PARAMS_DIR,
+    GIFS_DIR,
+    CSV_DIR,
+    IMG_DIR,
+    DEPTH_DIR,
+    ZARR_DIR,
+)
 
 
 def read_single_key() -> bytes:
@@ -43,6 +52,7 @@ def read_single_key() -> bytes:
     try:
         # Windows
         import msvcrt  # type: ignore
+
         while True:
             ch = msvcrt.getch()
             # Skip prefix bytes for function keys
@@ -80,20 +90,29 @@ def main():
         description="Delete all files with a given extension in CSV_DIR/<folder>, PARAMS_DIR/<folder>, or DEPTH_DIR/<folder>, except one to keep."
     )
     parser.add_argument(
-        "--base", choices=["csv", "params", "depth", "zarr"], required=True,
-        help="Which base directory to use: CSV_DIR, PARAMS_DIR, DEPTH_DIR, or ZARR_DIR."
+        "--base",
+        choices=["csv", "params", "depth", "zarr"],
+        required=True,
+        help="Which base directory to use: CSV_DIR, PARAMS_DIR, DEPTH_DIR, or ZARR_DIR.",
     )
     parser.add_argument(
-        "specific_folder", type=str,
-        help="Subfolder under the chosen base directory (e.g., 'forests', 'configs')."
+        "specific_folder",
+        type=str,
+        help="Subfolder under the chosen base directory (e.g., 'forests', 'configs').",
     )
     parser.add_argument(
-        "-e", "--ext", required=True, type=str,
-        help="File extension to target (e.g., '.test' or 'test')."
+        "-e",
+        "--ext",
+        required=True,
+        type=str,
+        help="File extension to target (e.g., '.test' or 'test').",
     )
     parser.add_argument(
-        "-k", "--keep", required=False, type=str,
-        help="The single file to keep (basename or absolute/relative path). Required for non-.zarr."
+        "-k",
+        "--keep",
+        required=False,
+        type=str,
+        help="The single file to keep (basename or absolute/relative path). Required for non-.zarr.",
     )
     args = parser.parse_args()
 
@@ -159,7 +178,10 @@ def main():
 
     target_dir = (base_path / args.specific_folder).resolve()
     if not target_dir.exists() or not target_dir.is_dir():
-        print(f"Error: target directory does not exist or is not a directory: {target_dir}", file=sys.stderr)
+        print(
+            f"Error: target directory does not exist or is not a directory: {target_dir}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     # Keep file handling
@@ -177,19 +199,16 @@ def main():
     print(f"File to keep: {keep_name}")
 
     # Collect matching files (non-recursive)
-    all_matching = [
-        p for p in target_dir.iterdir()
-        if p.is_file() and p.suffix.lower() == ext_lc
-    ]
+    all_matching = [p for p in target_dir.iterdir() if p.is_file() and p.suffix.lower() == ext_lc]
 
     # Exclude the keep file (by basename match in this folder, or absolute path equality)
     to_delete = []
     for p in all_matching:
-        same_name = (p.name == keep_name)
+        same_name = p.name == keep_name
         same_abs = False
         try:
             if keep_resolved is not None:
-                same_abs = (p.resolve() == keep_resolved)
+                same_abs = p.resolve() == keep_resolved
         except Exception:
             pass
         if same_name or same_abs:
@@ -210,7 +229,9 @@ def main():
         print(f"  {p}")
 
     if keep_name not in [p.name for p in all_matching]:
-        print(f"\n[Warning] The keep file '{keep_name}' was not found among '{ext}' files in {target_dir}.")
+        print(
+            f"\n[Warning] The keep file '{keep_name}' was not found among '{ext}' files in {target_dir}."
+        )
 
     print("\nPress Enter to DELETE these files, or press Esc to CANCEL...")
 
@@ -244,7 +265,7 @@ def main():
 
 
 if __name__ == "__main__":
-    # Example usage 
+    # Example usage
     # python cleanup_files.py --base params forests --ext .yaml --keep base.yaml
     # python cleanup_files.py --base csv forests --ext .csv --keep base.csv
     # python cleanup_files.py --base depth forests --ext .npz --keep base.npz

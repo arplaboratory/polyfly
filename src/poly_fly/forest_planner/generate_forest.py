@@ -17,7 +17,7 @@ import time
 import numpy as np
 from time import perf_counter as _timer
 from pathlib import Path
-import typing 
+import typing
 from typing import Optional
 
 import poly_fly.utils.plot as plotter
@@ -31,12 +31,24 @@ from poly_fly.optimal_planner.planner import (
 from poly_fly.utils.utils import MPC
 from poly_fly.optimal_planner.global_planner import OpenSetEmptyException
 
-from poly_fly.data_io.utils import save_csv_arrays, save_params, BASE_DIR, PARAMS_DIR, \
-    GIFS_DIR, CSV_DIR, IMG_DIR
-from poly_fly.forest_planner.forest_params import ForestParamsLarge, ForestParamsSmall, \
-    FOREST_SMALL_OBS, FOREST_LARGE_OBS
+from poly_fly.data_io.utils import (
+    save_csv_arrays,
+    save_params,
+    BASE_DIR,
+    PARAMS_DIR,
+    GIFS_DIR,
+    CSV_DIR,
+    IMG_DIR,
+)
+from poly_fly.forest_planner.forest_params import (
+    ForestParamsLarge,
+    ForestParamsSmall,
+    FOREST_SMALL_OBS,
+    FOREST_LARGE_OBS,
+)
 
 MAX_PROCS = 16
+
 
 class ObstacleGenerationException(RuntimeError):
     pass
@@ -56,9 +68,11 @@ class ForestGenerator:
         self.forest_params = ForestParamsLarge()
 
         self.Q_dt = 1000
-        self.margin = None 
+        self.margin = None
 
-        self.base_yaml = os.path.join(PARAMS_DIR, "forests") + "/base.yaml" #Path(os.environ["POLYFLY_DIR"]) / "params" / "forests" / "base.yaml"
+        self.base_yaml = (
+            os.path.join(PARAMS_DIR, "forests") + "/base.yaml"
+        )  # Path(os.environ["POLYFLY_DIR"]) / "params" / "forests" / "base.yaml"
         self.params = dictToClass(MPC, yamlToDict(self.base_yaml))
         self.planner = Planner(self.params, plot=show_plot)
         self.planner.clear_obstacles()
@@ -102,8 +116,13 @@ class ForestGenerator:
                     return x
         raise ValueError(f"Unknown distribution: {dist_mode!r}")
 
-    def _make_box(self, size_l_rng, size_b_rng, dist_mode_x: typing.Optional[str] = None,
-                  dist_mode_y: typing.Optional[str] = None):
+    def _make_box(
+        self,
+        size_l_rng,
+        size_b_rng,
+        dist_mode_x: typing.Optional[str] = None,
+        dist_mode_y: typing.Optional[str] = None,
+    ):
         """Return one random cuboid dict (x,y,z,xl,yl,zl)."""
         dm_x = dist_mode_x or self.forest_params.dist_mode_x
         dm_y = dist_mode_y or self.forest_params.dist_mode_y
@@ -131,8 +150,10 @@ class ForestGenerator:
         self.forest_params.goal_z = z
 
         # Sanity-check the remaining space
-        if (self.forest_params.x_obs_range[1] <= self.forest_params.x_obs_range[0] or
-            self.forest_params.y_obs_range[1] <= self.forest_params.y_obs_range[0]):
+        if (
+            self.forest_params.x_obs_range[1] <= self.forest_params.x_obs_range[0]
+            or self.forest_params.y_obs_range[1] <= self.forest_params.y_obs_range[0]
+        ):
             raise RuntimeError("Goal buffer leaves no room for obstacles!")
 
     def set_margin(self, margin: float):
@@ -143,8 +164,7 @@ class ForestGenerator:
         self,
         goal_x: Optional[float] = None,
     ):
-        """Create `n_large + n_small` trunks plus one fixed central trunk.
-        """
+        """Create `n_large + n_small` trunks plus one fixed central trunk."""
         n_large = self.forest_params.n_large_obs
         n_small = self.forest_params.n_small_obs
         goal_x = self.forest_params.goal_x if goal_x is None else goal_x
@@ -202,7 +222,7 @@ class ForestGenerator:
 
             small_obstacles.append(cand)
 
-        obstacles = obstacles + large_obstacles + small_obstacles 
+        obstacles = obstacles + large_obstacles + small_obstacles
 
         return obstacles
 
@@ -224,10 +244,16 @@ class ForestGenerator:
         s_x = (x_grid_density * xl) / density
         s_y = (y_grid_density * yl) / density
 
-        x_centres = np.arange(self.forest_params.x_obs_range[0] + xl,
-                              self.forest_params.x_obs_range[1] - xl + 1e-6, s_x)
-        y_centres = np.arange(self.forest_params.y_obs_range[0] + yl,
-                              self.forest_params.y_obs_range[1] - yl + 1e-6, s_y)
+        x_centres = np.arange(
+            self.forest_params.x_obs_range[0] + xl,
+            self.forest_params.x_obs_range[1] - xl + 1e-6,
+            s_x,
+        )
+        y_centres = np.arange(
+            self.forest_params.y_obs_range[0] + yl,
+            self.forest_params.y_obs_range[1] - yl + 1e-6,
+            s_y,
+        )
 
         obstacles: list[dict] = []
         for i, x in enumerate(x_centres):
@@ -301,18 +327,28 @@ class ForestGenerator:
             self.planner.add_obstacle_box(**obs)  # now matches the helper’s signature
         self.planner.set_start_state((0.0, 0.0, 0.0))
         self.planner.set_end_state(
-            self.pick_goal(self.forest,
-                           goal_x=self.forest_params.goal_x,
-                           goal_y=self.forest_params.goal_y)
+            self.pick_goal(
+                self.forest, goal_x=self.forest_params.goal_x, goal_y=self.forest_params.goal_y
+            )
         )
         self.planner.set_xy_bounds(
-            self.forest_params.x_range[0], self.forest_params.x_range[1],
-            self.forest_params.y_range[0], self.forest_params.y_range[1]
+            self.forest_params.x_range[0],
+            self.forest_params.x_range[1],
+            self.forest_params.y_range[0],
+            self.forest_params.y_range[1],
         )
         self.planner.Q_dt = self.Q_dt
         self.planner.set_margin(self.margin)
 
-    def solve(self, goal_x=None, goal_y=None, goal_z=None, start_state=None, start_vel_state=None, retry=False):
+    def solve(
+        self,
+        goal_x=None,
+        goal_y=None,
+        goal_z=None,
+        start_state=None,
+        start_vel_state=None,
+        retry=False,
+    ):
         goal_x = self.forest_params.goal_x if goal_x is None else goal_x
         goal_y = self.forest_params.goal_y if goal_y is None else goal_y
         goal_z = self.forest_params.goal_z if goal_z is None else goal_z
@@ -329,8 +365,8 @@ class ForestGenerator:
             self.planner.setup(plot_global_planner=self.plot, viz_cb=False)
         except OpenSetEmptyException as e:
             print(e)
-            return None 
-        
+            return None
+
         try:
             sol_values, opt_sol, success, iterations, opt_time = self.planner.optimize()
         except OpenSetEmptyException:
@@ -365,9 +401,11 @@ class ForestGenerator:
                 if not success:
                     print(f"optimization failed for {filename}")
                     continue
-                
+
                 if show_plot:
-                    t, x, u = interpolate_distance(self.planner.params, sol_values, ds=0.25, append_zero=False)
+                    t, x, u = interpolate_distance(
+                        self.planner.params, sol_values, ds=0.25, append_zero=False
+                    )
                     plotter.plot_result(
                         self.planner.params,
                         x,
@@ -375,7 +413,9 @@ class ForestGenerator:
                         self.planner.differential_flatness,
                         self.planner.compute_quadrotor_rotation_matrix_no_jrk,
                     )
-                    plotter.plot_results_2d(self.planner.params, t, x, u, self.planner.differential_flatness)
+                    plotter.plot_results_2d(
+                        self.planner.params, t, x, u, self.planner.differential_flatness
+                    )
 
                     sol_x, sol_u = sol_values["x"], sol_values["u"]
                     sol_t = np.zeros((1, self.planner.params.horizon))
@@ -422,7 +462,7 @@ def run_one_seed(
     start: tuple,
     seed: int,
     idx: int,
-    planner_margin, 
+    planner_margin,
     init_vel,
     show_plot: bool = False,
     core_id: Optional[int] = None,
@@ -468,10 +508,10 @@ def run_one_seed(
         forest = gen.set_forest(gen.generate_forest())
     else:
         raise Exception()
-    
+
     gen.set_goal(*goal)
     gen.set_margin(planner_margin)
-    
+
     # Build a filesystem-safe suffix for goal, margin and init velocity
     gx, gy, gz = (str(v).replace('.', 'p').replace('-', 'n') for v in goal)
     goal_tag = f"g{gx}_{gy}_{gz}"
@@ -488,7 +528,7 @@ def run_one_seed(
         result = gen.solve(start_state=start, start_vel_state=init_vel)
     except OpenSetEmptyException as e:
         print("open set exception {e}")
-        result = None 
+        result = None
 
     if result is not None:
         sol_values, opt_sol, success, iterations, opt_time = result
@@ -512,8 +552,16 @@ def run_one_seed(
     return (fname, dt, idx, seed, core_id, success)
 
 
-def worker_loop(worker_id: int, show_plot: bool, pin: bool,
-                optimizations_to_run, results, opt_lock, res_lock, forest_type=2) -> None:
+def worker_loop(
+    worker_id: int,
+    show_plot: bool,
+    pin: bool,
+    optimizations_to_run,
+    results,
+    opt_lock,
+    res_lock,
+    forest_type=2,
+) -> None:
     """
     Pop jobs from optimizations_to_run until empty, run them, and append to results.
     Uses opt_lock/res_lock to synchronize access to shared lists.
@@ -531,9 +579,16 @@ def worker_loop(worker_id: int, show_plot: bool, pin: bool,
 
         # Run the optimization
         res = run_one_seed(
-            job["goal"], job["start"], job["seed"], job["idx"], 
-            job["planner_margin"], job["init_vel"],
-            show_plot, core_id, forest_type=forest_type)
+            job["goal"],
+            job["start"],
+            job["seed"],
+            job["idx"],
+            job["planner_margin"],
+            job["init_vel"],
+            show_plot,
+            core_id,
+            forest_type=forest_type,
+        )
 
         # Store the result
         res_lock.acquire()
@@ -576,8 +631,13 @@ def append_job_lists(
 
 
 def main_mp(
-    input_iterations: int = 2, show_plot: bool = False, pin: bool = False, use_mp=False, 
-    base_seed: Optional[int] = None, forest_type = 2) -> None:
+    input_iterations: int = 2,
+    show_plot: bool = False,
+    pin: bool = False,
+    use_mp=False,
+    base_seed: Optional[int] = None,
+    forest_type=2,
+) -> None:
     """
     Generate `iterations` random forests in parallel (batched).
       - Max concurrent workers: 8 (capped)
@@ -592,7 +652,7 @@ def main_mp(
         random.seed(base_seed)
         np.random.seed(base_seed)
 
-    # generate environments seeds 
+    # generate environments seeds
     env_seeds = []
     for i in range(input_iterations):
         s = random.getrandbits(32)
@@ -609,7 +669,11 @@ def main_mp(
     planner_margin_sets = [0.5]
     init_vel_sets = [(0, 0, 0), (1, 0, 0)]
     goals, starts, seeds, planner_margins, init_vels = append_job_lists(
-        goals, starts, seeds, planner_margins, init_vels,
+        goals,
+        starts,
+        seeds,
+        planner_margins,
+        init_vels,
         input_iterations,
         env_seeds,
         goal_set,
@@ -623,7 +687,11 @@ def main_mp(
     planner_margin_sets = [0.6]
     init_vel_sets = [(0, 0, 0)]
     goals, starts, seeds, planner_margins, init_vels = append_job_lists(
-        goals, starts, seeds, planner_margins, init_vels,
+        goals,
+        starts,
+        seeds,
+        planner_margins,
+        init_vels,
         input_iterations,
         env_seeds,
         goal_set,
@@ -668,21 +736,32 @@ def main_mp(
 
         # Fill the global work list with all unique (goal,start,seed,idx) combos
         for idx, (g, st, s) in enumerate(zip(goals, starts, seeds)):
-            optimizations_to_run.append({
-                "goal": g,
-                "start": st,
-                "seed": s,
-                "idx": idx,
-                "planner_margin": planner_margins[idx],
-                "init_vel": init_vels[idx],
-            })
+            optimizations_to_run.append(
+                {
+                    "goal": g,
+                    "start": st,
+                    "seed": s,
+                    "idx": idx,
+                    "planner_margin": planner_margins[idx],
+                    "init_vel": init_vels[idx],
+                }
+            )
 
         # Spawn batch_size worker processes
         procs = []
         for wid in range(batch_size):
             p = mp.Process(
                 target=worker_loop,
-                args=(wid, show_plot, pin, optimizations_to_run, results, opt_lock, res_lock, forest_type),
+                args=(
+                    wid,
+                    show_plot,
+                    pin,
+                    optimizations_to_run,
+                    results,
+                    opt_lock,
+                    res_lock,
+                    forest_type,
+                ),
             )
             p.start()
             procs.append(p)
@@ -704,7 +783,9 @@ def main_mp(
             iv = init_vels[idx]
             core_id = 0 if pin else None  # harmless in single-process mode
             b0 = time.time()
-            results_list.append(run_one_seed(g, st, s, idx, pm, iv, show_plot, core_id, forest_type))
+            results_list.append(
+                run_one_seed(g, st, s, idx, pm, iv, show_plot, core_id, forest_type)
+            )
             bdt = time.time() - b0
 
             collected = len(results_list)
@@ -791,7 +872,7 @@ def print_batch_status(
 
 
 if __name__ == "__main__":
-    #  Example usage 
+    #  Example usage
     # python generate_forest.py -n 5 --mp
 
     mp.freeze_support()  # safe no-op on Linux; helpful on Windows/CI
@@ -847,6 +928,5 @@ if __name__ == "__main__":
         pin=args.pin,
         use_mp=args.use_mp,
         base_seed=args.seed,
-        forest_type=args.forest_type
+        forest_type=args.forest_type,
     )
-

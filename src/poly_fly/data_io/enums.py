@@ -1,6 +1,7 @@
 class GroupNames:
     TRAJS = "trajs"
 
+
 class DatasetKeys:
     NAME = "name"
     TIME = "time"
@@ -32,6 +33,7 @@ class DatasetKeys:
     SOL_PAYLOAD_RPY = "sol_payload_rpy"
     SOL_QUAD_QUAT = "sol_quad_quat"
     ROT_MAT = "rot_mat"
+
 
 class AttrKeys:
     T = "T"

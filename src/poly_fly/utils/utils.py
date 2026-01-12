@@ -179,13 +179,13 @@ def load_params_sidecar_for_csv(csv_path):
         return mpc_from_yaml(sidecar)
     raise FileNotFoundError(f"No params sidecar found next to CSV: {sidecar}")
 
+
 def _skew(v: np.ndarray) -> np.ndarray:
     """Skew-symmetric cross-product matrix [v]_x."""
     x, y, z = v
     # Builds [v]_x = [[0,-z, y],[z,0,-x],[-y,x,0]]  ← matches your figure
-    return np.array([[ 0.0, -z,   y ],
-                     [  z,  0.0, -x ],
-                     [ -y,  x,   0.0]])
+    return np.array([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]])
+
 
 def rotation_matrix_from_a_to_b(a, b, eps: float = 1e-8) -> np.ndarray:
     """
@@ -196,26 +196,26 @@ def rotation_matrix_from_a_to_b(a, b, eps: float = 1e-8) -> np.ndarray:
     with v = a x b, s = ||v||, c = a · b.
     Handles c≈1 (identity) and c≈-1 (180°) cases explicitly.
     """
-    a = np.asarray(a, dtype=float)   # accept list/tuple; ensure float ndarray
+    a = np.asarray(a, dtype=float)  # accept list/tuple; ensure float ndarray
     b = np.asarray(b, dtype=float)
 
-    na = np.linalg.norm(a)           # ||a||
-    nb = np.linalg.norm(b)           # ||b||
+    na = np.linalg.norm(a)  # ||a||
+    nb = np.linalg.norm(b)  # ||b||
     if na < eps or nb < eps:
         raise ValueError("Input vectors must be nonzero.")
 
-    a = a / na                       # normalize (your note assumes unit a, b)
+    a = a / na  # normalize (your note assumes unit a, b)
     b = b / nb
 
-    v = np.cross(a, b)               # ν = a × b           ← from screenshot
+    v = np.cross(a, b)  # ν = a × b           ← from screenshot
     c = float(np.clip(np.dot(a, b), -1.0, 1.0))  # c = a · b, clamped to [-1,1]
-    s = np.linalg.norm(v)            # s = ||ν|| = sin(angle)
+    s = np.linalg.norm(v)  # s = ||ν|| = sin(angle)
 
     # Degeneracies when s≈0:
     # - If c>0: a and b are (almost) identical → R = I
     # - If c<0: a and b are opposite → rotate π around any axis ⟂ a
     if s < eps:
-        if c > 0.0:                  # parallel case (θ≈0)
+        if c > 0.0:  # parallel case (θ≈0)
             # print("PARALLEL")
             return np.eye(3)
         else:
@@ -228,16 +228,18 @@ def rotation_matrix_from_a_to_b(a, b, eps: float = 1e-8) -> np.ndarray:
             return 2.0 * np.outer(u, u) - np.eye(3)
 
     print("\n\nGOOD\n\n")
-    K = _skew(v)                     # K = [ν]_x
+    K = _skew(v)  # K = [ν]_x
     # Rodrigues: R = I + K + K^2 * ((1-c)/s^2)
     # (Your note shows you can also use ((1-c)/s^2) = 1/(1+c), c≠-1)
     R = np.eye(3) + K + (K @ K) * ((1.0 - c) / (s * s))
     return R
 
+
 def rpy_from_a_to_b(a, b):
     R = rotation_matrix_from_a_to_b(a, b)
     r, p, y = Rot.from_matrix(R).as_euler('zyx', degrees=False)
     return np.array([r, p, y])
+
 
 def vector_in_bodyframe(v, q):
     """
@@ -254,11 +256,14 @@ def vector_in_bodyframe(v, q):
     v_body = np.zeros_like(v)
 
     for i in range(N):
-        R_i = R_list[i, :, :].T   # world->body is R^T
+        R_i = R_list[i, :, :].T  # world->body is R^T
         v_body[i, :] = R_i @ v[i, :]
     return v_body
 
-def get_yaw_along_trajectory(pos, vel, quats, times, max_yaw_rate=2.0*0.785398, zero_initial_yaw=False):
+
+def get_yaw_along_trajectory(
+    pos, vel, quats, times, max_yaw_rate=2.0 * 0.785398, zero_initial_yaw=False
+):
     """
     Inputs column-major:
         pos (3,N), vel (3,N), quats (4,N) (x,y,z,w), times (N,)
@@ -266,8 +271,8 @@ def get_yaw_along_trajectory(pos, vel, quats, times, max_yaw_rate=2.0*0.785398, 
     before generating the yaw trajectory.
     Returns (yaws (N,), new_quats (4,N) (w,x,y,z)).
     """
-    pos   = np.asarray(pos, dtype=float)
-    vel   = np.asarray(vel, dtype=float)
+    pos = np.asarray(pos, dtype=float)
+    vel = np.asarray(vel, dtype=float)
     quats = np.asarray(quats, dtype=float)
     times = np.asarray(times, dtype=float)
 
@@ -284,9 +289,9 @@ def get_yaw_along_trajectory(pos, vel, quats, times, max_yaw_rate=2.0*0.785398, 
 
     N = pos.shape[0]
     if N == 0:
-        return np.zeros((0,)), np.zeros((4,0))
+        return np.zeros((0,)), np.zeros((4, 0))
 
-    if np.linalg.norm(vel[0, :]) > 1e-6 and np.abs(np.arctan2(vel[0,1], vel[0,0])) > 1e-2:
+    if np.linalg.norm(vel[0, :]) > 1e-6 and np.abs(np.arctan2(vel[0, 1], vel[0, 0])) > 1e-2:
         raise ValueError("Initial velocity must be near zero.")
 
     # Initial orientation: extract yaw, pitch, roll (zyx gives yaw, pitch, roll)
@@ -305,38 +310,42 @@ def get_yaw_along_trajectory(pos, vel, quats, times, max_yaw_rate=2.0*0.785398, 
     else:
         r0_fixed = r0_obj
     q0_fixed_xyzw = r0_fixed.as_quat()  # (x,y,z,w)
-    quats[0, :] = [q0_fixed_xyzw[0], q0_fixed_xyzw[1], q0_fixed_xyzw[2], q0_fixed_xyzw[3]]  # overwrite with yaw=0
-
+    quats[0, :] = [
+        q0_fixed_xyzw[0],
+        q0_fixed_xyzw[1],
+        q0_fixed_xyzw[2],
+        q0_fixed_xyzw[3],
+    ]  # overwrite with yaw=0
 
     yaws = np.zeros(N)  # yaws[0] already zero after correction
     speed_eps = 1e-6
 
     for k in range(1, N):
-        dt = times[k] - times[k-1]
+        dt = times[k] - times[k - 1]
         v = vel[k, :]
         speed = np.linalg.norm(v[:2])
         if speed > speed_eps:
             desired = np.arctan2(v[1], v[0])
         else:
-            desired = yaws[k-1]
-        delta = desired - yaws[k-1]
+            desired = yaws[k - 1]
+        delta = desired - yaws[k - 1]
         delta = (delta + np.pi) % (2 * np.pi) - np.pi
         max_delta = max_yaw_rate * dt
         if delta > max_delta:
             delta = max_delta
         elif delta < -max_delta:
             delta = -max_delta
-        yaws[k] = yaws[k-1] + delta
+        yaws[k] = yaws[k - 1] + delta
 
     # Post-process to avoid jumps at wrap boundary (spec: handle transitions near ±pi)
-    zero_thr = 0.01     # radians: consider this "zero"
-    pi_thr   = 0.1     # radians: closeness to ±pi
+    zero_thr = 0.01  # radians: consider this "zero"
+    pi_thr = 0.1  # radians: closeness to ±pi
     # If initial yaw drifted numerically near ±pi, force to 0
     if abs(abs(yaws[0]) - np.pi) < pi_thr:
         yaws[0] = 0.0
     # Fix flips: previous ~0 and current ~±pi
     for k in range(1, N):
-        if abs(yaws[k-1]) < zero_thr and (np.pi - abs(yaws[k])) < pi_thr:
+        if abs(yaws[k - 1]) < zero_thr and (np.pi - abs(yaws[k])) < pi_thr:
             if yaws[k] > 0:
                 yaws[k] -= np.pi  # 0 -> +pi  => subtract pi
             else:

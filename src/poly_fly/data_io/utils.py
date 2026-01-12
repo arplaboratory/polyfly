@@ -11,11 +11,7 @@ from scipy.spatial.transform import Rotation as R
 from pathlib import Path
 from dataclasses import asdict
 
-from poly_fly.utils.utils import (
-    MPC,
-    dictToClass,
-    vec2asym,
-    yamlToDict)
+from poly_fly.utils.utils import MPC, dictToClass, vec2asym, yamlToDict
 
 import random
 
@@ -35,14 +31,29 @@ ZARR_DIR = os.path.join(BASE_DIR, "data", "zarr")
 DEPTH_SCALE_FACTOR = 10.0  # scale depth images by this factor to get meters
 
 NORMALIZATION_STATS_DIR = os.path.join(BASE_DIR, "data", "normalization_stats")
-DEFAULT_NORMALIZATION_STATE_KEYS = ["payload_vel", "robot_vel", "robot_quat", "robot_goal_relative", "rot_mat"]
-DEFAULT_NORMALIZATION_FUTURE_KEYS = ["future_robot_pos", "future_payload_pos", "future_quaternion", "future_robot_vel", "future_payload_vel", "future_rot_mat"]
+DEFAULT_NORMALIZATION_STATE_KEYS = [
+    "payload_vel",
+    "robot_vel",
+    "robot_quat",
+    "robot_goal_relative",
+    "rot_mat",
+]
+DEFAULT_NORMALIZATION_FUTURE_KEYS = [
+    "future_robot_pos",
+    "future_payload_pos",
+    "future_quaternion",
+    "future_robot_vel",
+    "future_payload_vel",
+    "future_rot_mat",
+]
+
 
 def find_base_dirs() -> tuple[Path, Path, Path]:
     base = Path(os.environ.get("POLYFLY_DIR", Path.cwd()))
     csv_dir = base / "data" / "csvs"
     params_dir = base / "data" / "params"
     return base, csv_dir, params_dir
+
 
 def load_all_csvs_and_params(csv_subdirectory) -> dict[str, list]:
     """
@@ -65,7 +76,7 @@ def load_all_csvs_and_params(csv_subdirectory) -> dict[str, list]:
     for csv_path in csv_files:
         print(f"loading csv {csv_path}")
         stem = csv_path.stem
-        yaml_path = (yaml_root / f"{stem}.yaml")
+        yaml_path = yaml_root / f"{stem}.yaml"
         if not yaml_path.exists():
             # fallback to guesser using global PARAMS_DIR
             yaml_path = guess_yaml_from_csv(csv_path, Path(PARAMS_DIR))
@@ -102,7 +113,7 @@ def load_all_csvs_and_params_names(csv_subdirectory) -> dict[str, list]:
     for csv_path in csv_files:
         print(f"loading csv {csv_path}")
         stem = csv_path.stem
-        yaml_path = (yaml_root / f"{stem}.yaml")
+        yaml_path = yaml_root / f"{stem}.yaml"
 
         if not yaml_path.exists():
             # fallback to guesser using global PARAMS_DIR
@@ -114,6 +125,7 @@ def load_all_csvs_and_params_names(csv_subdirectory) -> dict[str, list]:
         yaml_paths.append(yaml_path)
 
     return csv_files, yaml_paths
+
 
 def load(csv_path, yaml_path, depth_path=None):
     data = load_csv(csv_path)
@@ -131,7 +143,8 @@ def load(csv_path, yaml_path, depth_path=None):
         data[DK.DEPTH] = None
 
     return data
-    
+
+
 def load_csv(csv_path):
     """
     Read the CSV produced by `save_csv_arrays`.
@@ -186,8 +199,8 @@ def load_csv(csv_path):
     payload_rpy_cols = sorted(payload_rpy_cols, key=lambda c: int(c.split("_")[-1]))
     rot_mat_cols = sorted(rot_mat_cols, key=lambda c: int(c.split("_")[-1]))
 
-    sol_x = df[x_cols].to_numpy(dtype=float)            
-    sol_u = df[u_cols].to_numpy(dtype=float)              
+    sol_x = df[x_cols].to_numpy(dtype=float)
+    sol_u = df[u_cols].to_numpy(dtype=float)
     sol_quad_x = df[quad_x_cols].to_numpy(dtype=float)
 
     assert len(quad_quat_cols) == 4
@@ -198,7 +211,7 @@ def load_csv(csv_path):
 
     assert len(rot_mat_cols) == 6
     sol_rot_mat = df[rot_mat_cols].to_numpy(dtype=float)
-    
+
     # Extra sanity checks: lengths must match time length
     if sol_x.shape[0] != N:
         raise ValueError(f"sol_x has {sol_x.shape[0]} samples but time has {N}.")
@@ -209,7 +222,9 @@ def load_csv(csv_path):
     if sol_quad_quat.shape[0] != N:
         raise ValueError(f"sol_quad_quat has {sol_quad_quat.shape[0]} samples but time has {N}.")
     if sol_payload_rpy.shape[0] != N:
-        raise ValueError(f"sol_payload_rpy has {sol_payload_rpy.shape[0]} samples but time has {N}.")
+        raise ValueError(
+            f"sol_payload_rpy has {sol_payload_rpy.shape[0]} samples but time has {N}."
+        )
 
     return {
         DK.TIME: time,
@@ -220,6 +235,7 @@ def load_csv(csv_path):
         DK.SOL_PAYLOAD_RPY: sol_payload_rpy,
         DK.ROT_MAT: sol_rot_mat,
     }
+
 
 def load_obstacle_info_from_yaml(yaml_path):
     """
@@ -232,6 +248,7 @@ def load_obstacle_info_from_yaml(yaml_path):
     """
     params = load_params(yaml_path)
     return load_obstacle_info_from_params(params)
+
 
 def load_obstacle_info_from_params(params):
     """
@@ -264,6 +281,7 @@ def load_obstacle_info_from_params(params):
         records.append((float(x), float(y), float(z), float(xL), float(yL), float(zL)))
 
     return np.array(records, dtype=dtype)
+
 
 def save_csv_arrays(data: dict):
     """
@@ -331,6 +349,7 @@ def save_csv_arrays(data: dict):
             )
             writer.writerow(row)
 
+
 def save_depth_data(filename, times, depth, subdirectory: str = "depth") -> str:
     """
     Save a stack of depth frames aligned with 'times' to a compressed NPZ.
@@ -348,7 +367,7 @@ def save_depth_data(filename, times, depth, subdirectory: str = "depth") -> str:
         raise ValueError(f"Depth length {depth.shape[0]} must match times length {times.shape[0]}.")
 
     min_value = np.min(depth)
-    if min_value < 0: 
+    if min_value < 0:
         print(depth)
         raise ValueError(f"Depth contains negative values (min {min_value}).")
 
@@ -358,6 +377,7 @@ def save_depth_data(filename, times, depth, subdirectory: str = "depth") -> str:
     print(f"SAVING TO {out_path}")
     np.savez_compressed(out_path, time=times, depth=depth.astype(np.float16, copy=False))
     return str(out_path)
+
 
 def load_depth_data(p):
     """
@@ -375,6 +395,7 @@ def load_depth_data(p):
         depth = data["depth"]
     return time, depth
 
+
 def guess_yaml_from_csv(csv_path: Path, params_dir: Path) -> Path:
     try:
         parts = csv_path.parts
@@ -387,6 +408,7 @@ def guess_yaml_from_csv(csv_path: Path, params_dir: Path) -> Path:
     except Exception:
         return params_dir / csv_path.with_suffix(".yaml").name
 
+
 def load_params(yaml_path: Path):
     """
     Build MPC params object.
@@ -396,15 +418,16 @@ def load_params(yaml_path: Path):
     """
     if type(yaml_path) == str:
         yaml_path = Path(yaml_path)
-    
-    
+
     if not yaml_path.exists():
         raise FileNotFoundError(f"Could not locate params YAML: {yaml_path}")
     return dictToClass(MPC, yamlToDict(str(yaml_path)))
 
+
 def save_params(params_path, params):
     with open(params_path, "w") as f_params:
         yaml.safe_dump(asdict(params), f_params, sort_keys=False)
+
 
 def save_all(data: dict):
     """
@@ -454,21 +477,26 @@ def save_all(data: dict):
     filedir_csv = os.path.join(CSV_DIR, subdirectory, filename) + ".csv"
     filedir_params = os.path.join(PARAMS_DIR, subdirectory, filename) + ".yaml"
 
-    save_csv_arrays({
-        AttrKeys.CSV_FILEPATH: filedir_csv,
-        DK.TIME: interpolated_time,
-        DK.SOL_X: interpolated_x,
-        DK.SOL_U: interpolated_u,
-        DK.SOL_QUAD_X: interpolated_quad_x,
-        DK.SOL_QUAD_QUAT: robot_quat,
-        DK.SOL_PAYLOAD_RPY: interpolated_payload_rpy,
-        DK.ROT_MAT: interpolated_rot_mat,
-    })
+    save_csv_arrays(
+        {
+            AttrKeys.CSV_FILEPATH: filedir_csv,
+            DK.TIME: interpolated_time,
+            DK.SOL_X: interpolated_x,
+            DK.SOL_U: interpolated_u,
+            DK.SOL_QUAD_X: interpolated_quad_x,
+            DK.SOL_QUAD_QUAT: robot_quat,
+            DK.SOL_PAYLOAD_RPY: interpolated_payload_rpy,
+            DK.ROT_MAT: interpolated_rot_mat,
+        }
+    )
     save_params(filedir_params, params)
 
-def find_csvs(num_files,
-              yaml_dir="/home/mrunal/Documents/poly_fly/data/params/forests",
-              csv_dir="/home/mrunal/Documents/poly_fly/data/csvs/forests"):
+
+def find_csvs(
+    num_files,
+    yaml_dir="/home/mrunal/Documents/poly_fly/data/params/forests",
+    csv_dir="/home/mrunal/Documents/poly_fly/data/csvs/forests",
+):
     """
     Return two lists (yaml_paths, csv_paths) of length `num_files` with matching stems:
       - yaml:  {yaml_dir}/forest_*.yaml
@@ -504,61 +532,65 @@ def find_csvs(num_files,
     yaml_paths, csv_paths = zip(*pairs)
     return list(yaml_paths), list(csv_paths)
 
+
 def extract_future_trajectory(future_horizon: int, x):
     if future_horizon <= 0:
         raise ValueError("future_horizon must be a positive integer")
     x = np.asarray(x)
     if x.ndim != 2:
         raise ValueError(f"x must have shape [N, M], got {x.shape}")
-    
+
     N = x.shape[0]
     out = np.zeros((N, future_horizon, x.shape[1]))
-    for i in range(N-1):
+    for i in range(N - 1):
         start_idx = i + 1
         end_idx = min(start_idx + future_horizon, N)
         cur_horizon_length = end_idx - start_idx
-        out[i, :cur_horizon_length, :] = x[start_idx: end_idx, :]
+        out[i, :cur_horizon_length, :] = x[start_idx:end_idx, :]
 
         if end_idx < start_idx + future_horizon:
             out[i, cur_horizon_length:future_horizon, :] = x[-1, :]
-        
+
     out[-1, :, :] = x[-1, :]
 
-    return out 
+    return out
+
 
 def make_trajectory_relative(x, base_x):
     x = np.asarray(x)
     assert x.ndim == 3
     assert x.shape[0] == base_x.shape[0]
     assert x.shape[2] == base_x.shape[1]
-    
+
     N = x.shape[0]
     out = np.zeros_like(x)
 
     for i in range(x.shape[0]):
         for j in range(x.shape[1]):
-           out[i, j, :] = x[i, j, :] - base_x[i, :]
+            out[i, j, :] = x[i, j, :] - base_x[i, :]
 
     return out
+
 
 def extract_relative_payload_pos(future_robot_pos, future_payload_pos, future_quaternion):
     x_payload_wrt_robot_in_world = future_payload_pos - future_robot_pos
     x_payload_wrt_robot_in_body = np.zeros_like(x_payload_wrt_robot_in_world)
 
-    # TODO Vectoriz implementation    
+    # TODO Vectoriz implementation
     for i in range(future_quaternion.shape[0]):
         for j in range(future_quaternion.shape[1]):
             R_mat = R.from_quat(future_quaternion[i, j, :]).as_matrix()
             x_payload_wrt_robot_in_body[i, j, :] = R_mat.T @ x_payload_wrt_robot_in_world[i, j, :]
-    
+
     return x_payload_wrt_robot_in_body
+
 
 def make_vel_trajectory_relative(v, base_q):
     v = np.asarray(v)
     assert v.ndim == 3
     assert v.shape[0] == base_q.shape[0]
     assert v.shape[2] == 3
-    
+
     N = v.shape[0]
     out = np.zeros_like(v)
     r_inv = R.from_quat(base_q).inv()  # (x,y,z,w)
@@ -569,42 +601,46 @@ def make_vel_trajectory_relative(v, base_q):
 
     return out
 
+
 # Write a test for extract_future_trajectory
 def test_extract_future_trajectory():
     x = np.array([[0, 0], [1, 1], [2, 2], [3, 3], [4, 4]])
     future_horizon = 3
-    expected_output = np.array([
-        [[1, 1], [2, 2], [3, 3]],
-        [[1, 1], [2, 2], [3, 3]],
-        [[1, 1], [2, 2], [3, 3]],
-        [[1, 1], [2, 2], [3, 3]],
-        [[4, 4], [4, 4], [4, 4]]
-    ])
+    expected_output = np.array(
+        [
+            [[1, 1], [2, 2], [3, 3]],
+            [[1, 1], [2, 2], [3, 3]],
+            [[1, 1], [2, 2], [3, 3]],
+            [[1, 1], [2, 2], [3, 3]],
+            [[4, 4], [4, 4], [4, 4]],
+        ]
+    )
     output = extract_future_trajectory(future_horizon, x, relative=True)
     assert np.array_equal(output, expected_output), f"Expected {expected_output}, but got {output}"
-    
+
     print("test_extract_future_trajectory passed.")
+
 
 # write a test for make_trajectory_relative
 def test_make_trajectory_relative():
-    x = np.array([
-        [[2, 2, 2], [4, 5, 6], [7, 8, 9]],
-        [[1, 1, 1], [5, 6, 7], [8, 9, 10]]
-    ])
-    expected_output = np.array([
-        [[0, 0, 0], [3, 3, 3], [6, 6, 6]],
-        [[0, 0, 0], [3, 3, 3], [6, 6, 6]]
-    ])
+    x = np.array([[[2, 2, 2], [4, 5, 6], [7, 8, 9]], [[1, 1, 1], [5, 6, 7], [8, 9, 10]]])
+    expected_output = np.array(
+        [[[0, 0, 0], [3, 3, 3], [6, 6, 6]], [[0, 0, 0], [3, 3, 3], [6, 6, 6]]]
+    )
     output = make_trajectory_relative(x)
     assert np.array_equal(output, expected_output), f"Expected {expected_output}, but got {output}"
-    
+
     print("test_make_trajectory_relative passed.")
+
 
 # ----------------------- Normalization stats I/O -----------------------
 def _npz_file_path(filename: str = "normalization_stats.npz") -> str:
     return os.path.join(NORMALIZATION_STATS_DIR, filename)
 
-def save_normalization_stats(dict_mean: dict, dict_std: dict, filename: str = "normalization_stats.npz"):
+
+def save_normalization_stats(
+    dict_mean: dict, dict_std: dict, filename: str = "normalization_stats.npz"
+):
     """
     Save normalization stats (means and stds) into a single NPZ file.
     Expects keys: {'depth'} ∪ required_state_keys ∪ required_future_keys.
@@ -627,6 +663,7 @@ def save_normalization_stats(dict_mean: dict, dict_std: dict, filename: str = "n
         payload[f"std__{k}"] = np.asarray(dict_std[k])
     np.savez_compressed(_npz_file_path(filename), **payload)
 
+
 def load_normalization_stats(filename: str = "normalization_stats.npz"):
     """
     Load normalization stats from NPZ and return (dict_mean, dict_std).
@@ -641,10 +678,10 @@ def load_normalization_stats(filename: str = "normalization_stats.npz"):
     with np.load(path, allow_pickle=False) as data:
         for name in data.files:
             if name.startswith("mean__"):
-                key = name[len("mean__"):]
+                key = name[len("mean__") :]
                 dict_mean[key] = data[name]
             elif name.startswith("std__"):
-                key = name[len("std__"):]
+                key = name[len("std__") :]
                 dict_std[key] = data[name]
 
     required = {"depth"} | set(required_state_keys) | set(required_future_keys)
@@ -657,27 +694,28 @@ def load_normalization_stats(filename: str = "normalization_stats.npz"):
 
     return dict_mean, dict_std
 
+
 def get_rotation_matrix_from_quat(quat):
     """
     Convert quaternion (x,y,z, w) to rotation matrix (3x3).
     Inout is shape (N,4)
     """
-    mats = R.from_quat(quat).as_matrix()    
+    mats = R.from_quat(quat).as_matrix()
     # extract first 2 columns of the rotation matrix
     return mats[:, :, :2]
+
 
 def process_rotation_matrix(rot_mat):
     """
     Input is (N, 6) representing first two columns of rotation matrix.
     Return (N, 3, 3)
-    """ 
+    """
     N = rot_mat.shape[0]
     if rot_mat.shape[1] != 6:
         raise ValueError(f"Expected rot_mat shape (N,6), got {rot_mat.shape}")
-    
+
     rot_mat_33 = np.zeros((N, 3, 3))
     rot_mat_33[:, :, :2] = rot_mat.reshape(N, 3, 2)
     # compute third column as cross product of first two columns
     rot_mat_33[:, :, 2] = np.cross(rot_mat_33[:, :, 0], rot_mat_33[:, :, 1])
     return rot_mat_33
-

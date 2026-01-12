@@ -10,28 +10,51 @@ from PIL import Image
 import matplotlib
 import torch
 import random
-import matplotlib.pyplot as plt   # <-- add
+import matplotlib.pyplot as plt  # <-- add
 from aerial_gym.utils.math import quat_from_euler_xyz_tensor  # if you want to use Euler -> quat
 from isaacgym import gymtorch  # add (for pushing DOF states)
-from poly_fly.data_io.utils import load_obstacle_info_from_yaml, load_csv, find_csvs, BASE_DIR, PARAMS_DIR, \
-    GIFS_DIR, CSV_DIR, IMG_DIR
+from poly_fly.data_io.utils import (
+    load_obstacle_info_from_yaml,
+    load_csv,
+    find_csvs,
+    BASE_DIR,
+    PARAMS_DIR,
+    GIFS_DIR,
+    CSV_DIR,
+    IMG_DIR,
+)
 from scipy.spatial.transform import Rotation as Rot
 import os
 from pathlib import Path
+
 # Add missing helpers from IO
-from poly_fly.data_io.utils import load_all_csvs_and_params, save_depth_data, load_all_csvs_and_params_names, DEPTH_SCALE_FACTOR
+from poly_fly.data_io.utils import (
+    load_all_csvs_and_params,
+    save_depth_data,
+    load_all_csvs_and_params_names,
+    DEPTH_SCALE_FACTOR,
+)
 from poly_fly.forest_planner.forest_params import ForestParamsLarge, ForestParamsSmall
 from poly_fly.deep_poly_fly.model.policy import load_model_from_checkpoint
-from poly_fly.controller.mpc import MPC 
+from poly_fly.controller.mpc import MPC
+
 # ADD: import normalization stats loader
 from poly_fly.data_io.utils import load_normalization_stats
 from poly_fly.data_io.enums import DatasetKeys
 
-SAMPLING_STRIDE = 1 # do not change 
+SAMPLING_STRIDE = 1  # do not change
+
 
 class MotionCollector:
-    def __init__(self, num_envs: int = 2, device: str = "cuda:0", seed: int = 0,
-        headless: bool = False, use_warp: bool = True, viz_depth: bool = True):
+    def __init__(
+        self,
+        num_envs: int = 2,
+        device: str = "cuda:0",
+        seed: int = 0,
+        headless: bool = False,
+        use_warp: bool = True,
+        viz_depth: bool = True,
+    ):
         self.num_envs = num_envs
         self.device = device
         self.seed = seed
@@ -60,11 +83,15 @@ class MotionCollector:
         state_tensor = self.env_manager.global_tensor_dict["env_asset_state_tensor"]
         state_tensor[env_id, asset_id, 0:3] = torch.as_tensor(new_pos, device=state_tensor.device)
         if new_quat is not None:
-            state_tensor[env_id, asset_id, 3:7] = torch.as_tensor(new_quat, device=state_tensor.device)
+            state_tensor[env_id, asset_id, 3:7] = torch.as_tensor(
+                new_quat, device=state_tensor.device
+            )
         state_tensor[env_id, asset_id, 7:13] = 0.0
         self.env_manager.IGE_env.write_to_sim()
         if self.env_manager.use_warp:
-            self.env_manager.warp_env.reset_idx(torch.as_tensor([env_id], device=state_tensor.device))
+            self.env_manager.warp_env.reset_idx(
+                torch.as_tensor([env_id], device=state_tensor.device)
+            )
 
     def set_cubes(self, env_id: int, positions, quats=None):
         state = self.env_manager.global_tensor_dict["env_asset_state_tensor"]
@@ -86,8 +113,8 @@ class MotionCollector:
         asset_dicts = self.env_manager.global_asset_dicts[env_id]
 
         logger.info(f"YAML obstacles: {len(obstacle_info)} | Env assets: {num_assets_total}")
-        assert len(obstacle_info) == num_assets_total -1
-        
+        assert len(obstacle_info) == num_assets_total - 1
+
         # The first asset is the floor
         start_asset_id = 1
         max_placeable = max(0, num_assets_total - start_asset_id)
@@ -126,8 +153,11 @@ class MotionCollector:
         am = self.env_manager.asset_manager
         printed = False
         cand_attrs = [
-            "env_asset_specs", "asset_specs", "ordered_asset_specs",
-            "env_asset_name_list", "asset_name_list"
+            "env_asset_specs",
+            "asset_specs",
+            "ordered_asset_specs",
+            "env_asset_name_list",
+            "asset_name_list",
         ]
         for attr in cand_attrs:
             if hasattr(am, attr):
@@ -144,18 +174,30 @@ class MotionCollector:
         for idx in range(num_assets):
             print(f"AssetIdx {idx}: pos {pos0[idx].tolist()}")
 
-    def set_robot_pose(self, env_ids, positions, quat_xyzw_list=None, euler_rpy_list=None,
-                       zero_vel=True, dof_positions_list=None, dof_velocities_list=None):
+    def set_robot_pose(
+        self,
+        env_ids,
+        positions,
+        quat_xyzw_list=None,
+        euler_rpy_list=None,
+        zero_vel=True,
+        dof_positions_list=None,
+        dof_velocities_list=None,
+    ):
         gtd = self.env_manager.global_tensor_dict
         state = gtd["robot_state_tensor"]
         env_ids = list(env_ids) if isinstance(env_ids, (list, tuple, range)) else [int(env_ids)]
         positions = list(positions)
         if quat_xyzw_list is None and euler_rpy_list is not None:
-            eulers = torch.as_tensor(euler_rpy_list, device=self.env_manager.device, dtype=torch.float32)
+            eulers = torch.as_tensor(
+                euler_rpy_list, device=self.env_manager.device, dtype=torch.float32
+            )
             quats = quat_from_euler_xyz_tensor(eulers)
             quat_xyzw_list = [quats[i] for i in range(quats.shape[0])]
         elif quat_xyzw_list is None:
-            quat_xyzw_list = [torch.tensor([0, 0, 0, 1.0], device=self.env_manager.device, dtype=torch.float32)] * len(env_ids)
+            quat_xyzw_list = [
+                torch.tensor([0, 0, 0, 1.0], device=self.env_manager.device, dtype=torch.float32)
+            ] * len(env_ids)
 
         for k, env_id in enumerate(env_ids):
             pos_k = torch.as_tensor(positions[k], device=state.device, dtype=state.dtype)
@@ -165,7 +207,11 @@ class MotionCollector:
             if zero_vel:
                 state[env_id, 7:13] = 0.0
 
-        if "dof_state_tensor" in gtd and gtd["dof_state_tensor"] is not None and dof_positions_list is not None:
+        if (
+            "dof_state_tensor" in gtd
+            and gtd["dof_state_tensor"] is not None
+            and dof_positions_list is not None
+        ):
             dof_state = gtd["dof_state_tensor"]
             num_dofs = dof_state.shape[1]
             for k, env_id in enumerate(env_ids):
@@ -173,14 +219,14 @@ class MotionCollector:
                 if q_list is None:
                     continue
                 n_set = min(len(q_list), num_dofs)
-                dof_state[env_id, :n_set, 0] = torch.as_tensor(q_list[:n_set],
-                                                               device=dof_state.device,
-                                                               dtype=dof_state.dtype)
+                dof_state[env_id, :n_set, 0] = torch.as_tensor(
+                    q_list[:n_set], device=dof_state.device, dtype=dof_state.dtype
+                )
                 if dof_velocities_list is not None and dof_velocities_list[k] is not None:
                     v_list = dof_velocities_list[k]
-                    dof_state[env_id, :n_set, 1] = torch.as_tensor(v_list[:n_set],
-                                                                   device=dof_state.device,
-                                                                   dtype=dof_state.dtype)
+                    dof_state[env_id, :n_set, 1] = torch.as_tensor(
+                        v_list[:n_set], device=dof_state.device, dtype=dof_state.dtype
+                    )
                 elif zero_vel:
                     dof_state[env_id, :n_set, 1] = 0.0
             unfolded = gtd["unfolded_dof_state_tensor"]
@@ -192,14 +238,18 @@ class MotionCollector:
         self.env_manager.IGE_env.write_to_sim()
         self.env_manager.robot_manager.robot.update_states()
 
-    def check_asset_names(self, env_id: int = 0, expected_first: str = "floor", verbose: bool = True):
+    def check_asset_names(
+        self, env_id: int = 0, expected_first: str = "floor", verbose: bool = True
+    ):
         gym = self.env_manager.IGE_env.gym
         env_handle = self.env_manager.IGE_env.env_handles[env_id]
         handles = self.env_manager.IGE_env.asset_handles[env_id]
         asset_dicts = self.env_manager.global_asset_dicts[env_id]
 
         if verbose:
-            print(f"[DEBUG] num actor handles={len(handles)}, num asset dict entries={len(asset_dicts)}")
+            print(
+                f"[DEBUG] num actor handles={len(handles)}, num asset dict entries={len(asset_dicts)}"
+            )
 
         names = []
         for i, asset_handle in enumerate(handles):
@@ -252,7 +302,7 @@ class MotionCollector:
             # Get first obstacle xL (fallback to xl/l if needed)
             xL = float(obs[0]["xL"])
             yL = float(obs[0]["yL"])
-           
+
             if np.isclose(xL, large_l, atol=1e-6) and np.isclose(yL, large_b, atol=1e-6):
                 inferred.append("obs_large_env")
             elif np.isclose(xL, small_l, atol=1e-6) and np.isclose(yL, small_b, atol=1e-6):
@@ -332,7 +382,9 @@ class MotionCollector:
         for stem in stems:
             yaml_path = str(Path(PARAMS_DIR) / subdirectory / f"{stem}.yaml")
             csv_path = str(Path(CSV_DIR) / subdirectory / f"{stem}.csv")
-            env_name = self._infer_env_name_from_yaml([yaml_path])  # 'obs_large_env' or 'obs_small_env'
+            env_name = self._infer_env_name_from_yaml(
+                [yaml_path]
+            )  # 'obs_large_env' or 'obs_small_env'
             items.append((stem, yaml_path, csv_path, env_name))
 
         # Group by forest type (environment name)
@@ -357,9 +409,12 @@ class MotionCollector:
                     csv_paths += [csv_paths[-1]] * (self.num_envs - len(csv_paths))
 
                 # Run simulation and collect depth
-                self.run(yaml_file_paths=yaml_paths, csv_file_paths=csv_paths,
-                                       step_stride=step_stride, max_steps=10_000)
-
+                self.run(
+                    yaml_file_paths=yaml_paths,
+                    csv_file_paths=csv_paths,
+                    step_stride=step_stride,
+                    max_steps=10_000,
+                )
 
     def _process_items_batch(self, items, step_stride: int, subdirectory: str):
         """
@@ -377,7 +432,7 @@ class MotionCollector:
             logger.info(f"{group_items}")
 
             for i in range(0, len(group_items), self.num_envs):
-                batch = group_items[i: i + self.num_envs]
+                batch = group_items[i : i + self.num_envs]
                 batch_stems = [b[0] for b in batch]
                 batch_yaml_paths = [str(b[1]) for b in batch]
                 batch_csv_paths = [str(b[2]) for b in batch]
@@ -426,9 +481,8 @@ class MotionCollector:
         # csv_files = [csv_files[i] for i in indices]
         # yaml_files = [yaml_files[i] for i in indices]
 
-
         # csv_files = []
-        # yaml_files = []        
+        # yaml_files = []
 
         # for _ in range(10):
         #     csv_files.append("/home/mrunal/Documents/poly_fly/data/csvs/forests/forest_001_f0_s4106135923.csv")
@@ -448,18 +502,21 @@ class MotionCollector:
         # 2) Process in batches (infer env per batch internally)
         BATCH_SIZE = 1
         for i in range(0, len(items), BATCH_SIZE):
-            batch_items = items[i: i + BATCH_SIZE]
+            batch_items = items[i : i + BATCH_SIZE]
             self._process_items_batch(batch_items, step_stride, subdirectory)
 
-    def get_next_desired_states(self, payload_pos, payload_vel, robot_pos, robot_vel,
-                                quat_xyzw, robot_goal, depth_image):
+    def get_next_desired_states(
+        self, payload_pos, payload_vel, robot_pos, robot_vel, quat_xyzw, robot_goal, depth_image
+    ):
         """
         Compute next desired states (mode 0) from current state + depth.
         Returns (desired_robot_positions, desired_payload_positions, desired_robot_quats, desired_robot_vel, desired_payload_vel)
         Shapes: (H,3), (H,3), (H,4), (H,3), (H,3)
         """
         if self.policy_model is None:
-            raise RuntimeError("policy_model is not set. Load/assign a model before calling get_next_desired_states().")
+            raise RuntimeError(
+                "policy_model is not set. Load/assign a model before calling get_next_desired_states()."
+            )
 
         # --- Load & cache normalization stats (once) ---
         if not hasattr(self, "_norm_cache") or self._norm_cache is None:
@@ -488,36 +545,61 @@ class MotionCollector:
                 "depth_mean": float(np.asarray(dict_mean[DatasetKeys.DEPTH])),
                 "depth_std": float(np.asarray(dict_std[DatasetKeys.DEPTH])),
                 # Future stats for all components (per-horizon)
-                "fut_robot_pos_mean": np.asarray(dict_mean[DatasetKeys.FUTURE_ROBOT_POS]).astype(np.float32),
-                "fut_robot_pos_std":  np.asarray(dict_std[DatasetKeys.FUTURE_ROBOT_POS]).astype(np.float32),
-                "fut_payload_pos_mean": np.asarray(dict_mean[DatasetKeys.FUTURE_PAYLOAD_POS]).astype(np.float32),
-                "fut_payload_pos_std":  np.asarray(dict_std[DatasetKeys.FUTURE_PAYLOAD_POS]).astype(np.float32),
-                "fut_quat_mean": np.asarray(dict_mean[DatasetKeys.FUTURE_QUATERNION]).astype(np.float32),
-                "fut_quat_std":  np.asarray(dict_std[DatasetKeys.FUTURE_QUATERNION]).astype(np.float32),
-                "fut_robot_vel_mean": np.asarray(dict_mean[DatasetKeys.FUTURE_ROBOT_VEL]).astype(np.float32),
-                "fut_robot_vel_std":  np.asarray(dict_std[DatasetKeys.FUTURE_ROBOT_VEL]).astype(np.float32),
-                "fut_payload_vel_mean": np.asarray(dict_mean[DatasetKeys.FUTURE_PAYLOAD_VEL]).astype(np.float32),
-                "fut_payload_vel_std":  np.asarray(dict_std[DatasetKeys.FUTURE_PAYLOAD_VEL]).astype(np.float32),
+                "fut_robot_pos_mean": np.asarray(dict_mean[DatasetKeys.FUTURE_ROBOT_POS]).astype(
+                    np.float32
+                ),
+                "fut_robot_pos_std": np.asarray(dict_std[DatasetKeys.FUTURE_ROBOT_POS]).astype(
+                    np.float32
+                ),
+                "fut_payload_pos_mean": np.asarray(
+                    dict_mean[DatasetKeys.FUTURE_PAYLOAD_POS]
+                ).astype(np.float32),
+                "fut_payload_pos_std": np.asarray(dict_std[DatasetKeys.FUTURE_PAYLOAD_POS]).astype(
+                    np.float32
+                ),
+                "fut_quat_mean": np.asarray(dict_mean[DatasetKeys.FUTURE_QUATERNION]).astype(
+                    np.float32
+                ),
+                "fut_quat_std": np.asarray(dict_std[DatasetKeys.FUTURE_QUATERNION]).astype(
+                    np.float32
+                ),
+                "fut_robot_vel_mean": np.asarray(dict_mean[DatasetKeys.FUTURE_ROBOT_VEL]).astype(
+                    np.float32
+                ),
+                "fut_robot_vel_std": np.asarray(dict_std[DatasetKeys.FUTURE_ROBOT_VEL]).astype(
+                    np.float32
+                ),
+                "fut_payload_vel_mean": np.asarray(
+                    dict_mean[DatasetKeys.FUTURE_PAYLOAD_VEL]
+                ).astype(np.float32),
+                "fut_payload_vel_std": np.asarray(dict_std[DatasetKeys.FUTURE_PAYLOAD_VEL]).astype(
+                    np.float32
+                ),
             }
         norm = self._norm_cache
 
         # --- Build & normalize state vector ---
         robot_quat = np.asarray(quat_xyzw, dtype=np.float32)
-        robot_goal_relative = np.asarray(robot_goal, dtype=np.float32) - np.asarray(robot_pos, dtype=np.float32)
-        # robot_goal_relative[2] = 0.0  
-        state_vec = np.concatenate([
-            np.asarray(payload_vel, dtype=np.float32),
-            np.asarray(robot_vel, dtype=np.float32),
-            robot_goal_relative,
-            robot_quat,
-        ], axis=0)
+        robot_goal_relative = np.asarray(robot_goal, dtype=np.float32) - np.asarray(
+            robot_pos, dtype=np.float32
+        )
+        # robot_goal_relative[2] = 0.0
+        state_vec = np.concatenate(
+            [
+                np.asarray(payload_vel, dtype=np.float32),
+                np.asarray(robot_vel, dtype=np.float32),
+                robot_goal_relative,
+                robot_quat,
+            ],
+            axis=0,
+        )
         print(f"relative goal: {robot_goal_relative})")
 
         if state_vec.shape[0] != 13:
             raise ValueError(f"State vector has shape {state_vec.shape}, expected (13,)")
 
         state_norm = (state_vec - norm["state_mean"]) / (norm["state_std"] + 1e-6)
-    
+
         depth_np = np.asarray(depth_image, dtype=np.float32)
         if depth_np.ndim != 2:
             raise ValueError(f"Depth image must be 2D, got shape {depth_np.shape}")
@@ -529,9 +611,13 @@ class MotionCollector:
         self.policy_model.eval()
         with torch.no_grad():
             model_device = next(self.policy_model.parameters()).device
-            state_tensor = torch.from_numpy(state_norm).to(model_device).unsqueeze(0)                # (1,13)
-            depth_tensor = torch.from_numpy(depth_norm).to(model_device).unsqueeze(0).unsqueeze(0)  # (1,1,64,64)
-            predicted_traj, mode_probs, *_ = self.policy_model(state_tensor, depth_tensor)          # expected (1,M,H,16)
+            state_tensor = torch.from_numpy(state_norm).to(model_device).unsqueeze(0)  # (1,13)
+            depth_tensor = (
+                torch.from_numpy(depth_norm).to(model_device).unsqueeze(0).unsqueeze(0)
+            )  # (1,1,64,64)
+            predicted_traj, mode_probs, *_ = self.policy_model(
+                state_tensor, depth_tensor
+            )  # expected (1,M,H,16)
 
         pred = predicted_traj.detach().cpu().numpy()
         if pred.ndim != 4:
@@ -545,18 +631,30 @@ class MotionCollector:
 
         # --- Slice normalized components (order must match model output) ---
         off = 0
-        rel_robot_pos_norm = hb[:, off:off+3]; off += 3
-        rel_payload_pos_norm = hb[:, off:off+3]; off += 3
-        quat_norm = hb[:, off:off+4]; off += 4
-        robot_vel_norm = hb[:, off:off+3]; off += 3
-        payload_vel_norm = hb[:, off:off+3]; off += 3
+        rel_robot_pos_norm = hb[:, off : off + 3]
+        off += 3
+        rel_payload_pos_norm = hb[:, off : off + 3]
+        off += 3
+        quat_norm = hb[:, off : off + 4]
+        off += 4
+        robot_vel_norm = hb[:, off : off + 3]
+        off += 3
+        payload_vel_norm = hb[:, off : off + 3]
+        off += 3
 
         # --- Unnormalize each component using per-horizon stats ---
-        rel_robot_pos = rel_robot_pos_norm * (norm["fut_robot_pos_std"] + 1e-6) + norm["fut_robot_pos_mean"]
-        rel_payload_pos = rel_payload_pos_norm * (norm["fut_payload_pos_std"] + 1e-6) + norm["fut_payload_pos_mean"]
+        rel_robot_pos = (
+            rel_robot_pos_norm * (norm["fut_robot_pos_std"] + 1e-6) + norm["fut_robot_pos_mean"]
+        )
+        rel_payload_pos = (
+            rel_payload_pos_norm * (norm["fut_payload_pos_std"] + 1e-6)
+            + norm["fut_payload_pos_mean"]
+        )
         quats = quat_norm * (norm["fut_quat_std"] + 1e-6) + norm["fut_quat_mean"]
         robot_vel = robot_vel_norm * (norm["fut_robot_vel_std"] + 1e-6) + norm["fut_robot_vel_mean"]
-        payload_vel = payload_vel_norm * (norm["fut_payload_vel_std"] + 1e-6) + norm["fut_payload_vel_mean"]
+        payload_vel = (
+            payload_vel_norm * (norm["fut_payload_vel_std"] + 1e-6) + norm["fut_payload_vel_mean"]
+        )
 
         # Normalize quaternions robustly
         norms = np.linalg.norm(quats, axis=1, keepdims=True)
@@ -566,7 +664,7 @@ class MotionCollector:
         # Set payload position based on quaternion direction & cable length
         cable_length = 0.561
         rot_mats = Rot.from_quat(quats).as_matrix()  # (H,3,3)
-        payload_dirs = -rot_mats[:, :, 2]            # (H,3) -Z axis of robot body frame
+        payload_dirs = -rot_mats[:, :, 2]  # (H,3) -Z axis of robot body frame
         rel_payload_pos = cable_length * payload_dirs
 
         desired_positions = base_robot_pos[None, :] + rel_robot_pos.astype(np.float32)
@@ -580,7 +678,9 @@ class MotionCollector:
             quats.astype(np.float32),
         )
 
-    def run_controller(self, desired_positions, desired_quats, desired_payload_positions, controller_state):
+    def run_controller(
+        self, desired_positions, desired_quats, desired_payload_positions, controller_state
+    ):
         """
         Run one MPC step.
         Inputs:
@@ -594,7 +694,10 @@ class MotionCollector:
         N = desired_positions.shape[0]
         assert hasattr(self, "mpc"), "self.mpc not set"
         assert N == self.mpc.N, f"Horizon mismatch: got {N}, expected {self.mpc.N}"
-        assert desired_quats.shape == (N, 4), f"desired_quats shape {desired_quats.shape} != {(N,4)}"
+        assert desired_quats.shape == (
+            N,
+            4,
+        ), f"desired_quats shape {desired_quats.shape} != {(N,4)}"
         assert desired_payload_positions.shape == (N, 3)
 
         # references rows: 0..N (N+1) with first row = current state
@@ -606,36 +709,40 @@ class MotionCollector:
         desired_velocities[-1] = desired_velocities[-2]
 
         desired_payload_velocities = np.zeros_like(desired_payload_positions)
-        desired_payload_velocities[:-1] = (desired_payload_positions[1:] - desired_payload_positions[:-1]) / self.mpc.dt
+        desired_payload_velocities[:-1] = (
+            desired_payload_positions[1:] - desired_payload_positions[:-1]
+        ) / self.mpc.dt
         desired_payload_velocities[-1] = desired_payload_velocities[-2]
 
         # Current (row 0)
-        references[0, 0:3] = controller_state[0:3]      # payload pos
-        references[0, 3:6] = controller_state[3:6]      # payload vel
-        references[0, 6:9] = controller_state[6:9]      # robot pos
-        references[0, 9:12] = controller_state[9:12]    # robot vel
+        references[0, 0:3] = controller_state[0:3]  # payload pos
+        references[0, 3:6] = controller_state[3:6]  # payload vel
+        references[0, 6:9] = controller_state[6:9]  # robot pos
+        references[0, 9:12] = controller_state[9:12]  # robot vel
         references[0, 12:16] = controller_state[12:16]  # robot quat (wxyz in state)
 
         # Fill predicted horizon (convert xyzw -> wxyz for MPC)
-        for k in range(1, N+1):
-            q_xyzw = desired_quats[k-1]
+        for k in range(1, N + 1):
+            q_xyzw = desired_quats[k - 1]
             # xyzw -> wxyz
             q_wxyz = np.array([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]], dtype=np.float64)
 
-            references[k, 0:3] = desired_payload_positions[k-1]
-            references[k, 3:6] = desired_payload_velocities[k-1]
-            references[k, 6:9] = desired_positions[k-1]
-            references[k, 9:12] = desired_velocities[k-1]
+            references[k, 0:3] = desired_payload_positions[k - 1]
+            references[k, 3:6] = desired_payload_velocities[k - 1]
+            references[k, 6:9] = desired_positions[k - 1]
+            references[k, 9:12] = desired_velocities[k - 1]
             references[k, 12:16] = q_wxyz
 
         u0, x_next = self.mpc.run_controller_step(controller_state, references)
-        
+
         # Extract next state components
         next_robot_pos = x_next[6:9] + desired_positions[0, :3]
         next_payload_pos = x_next[0:3] + desired_positions[0, :3]
         next_quat_wxyz = x_next[12:16]  # stored as wxyz
         # wxyz -> xyzw
-        next_quat = np.array([next_quat_wxyz[1], next_quat_wxyz[2], next_quat_wxyz[3], next_quat_wxyz[0]])
+        next_quat = np.array(
+            [next_quat_wxyz[1], next_quat_wxyz[2], next_quat_wxyz[3], next_quat_wxyz[0]]
+        )
 
         # Orientation for cable frame
         rot_mat = Rot.from_quat(next_quat).as_matrix()
@@ -657,12 +764,11 @@ class MotionCollector:
                 return np.eye(3)
             # opposite: choose any axis orthogonal to a
             e = np.array([1.0, 0.0, 0.0]) if abs(a[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
-            u = np.cross(a, e); u /= np.linalg.norm(u)
+            u = np.cross(a, e)
+            u /= np.linalg.norm(u)
             return -np.eye(3) + 2.0 * np.outer(u, u)
 
-        vx = np.array([[0, -v[2], v[1]],
-                    [v[2], 0, -v[0]],
-                    [-v[1], v[0], 0]])
+        vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
         rot_mat = np.eye(3) + vx + vx @ vx * ((1 - c) / (s**2))
 
         yaw, pitch, roll = Rot.from_matrix(rot_mat).as_euler('zyx', degrees=False)
@@ -670,10 +776,17 @@ class MotionCollector:
 
         return np.array([roll, pitch, yaw])
 
-
     # ----- run method (was __main__ logic) -----
-    def run(self, yaml_file_paths=None, csv_file_paths=None, step_stride: int = 10, max_steps: int = 10_000):
-        assert len(yaml_file_paths) == self.num_envs and len(csv_file_paths) == self.num_envs, "Provide num_envs YAML/CSV paths"
+    def run(
+        self,
+        yaml_file_paths=None,
+        csv_file_paths=None,
+        step_stride: int = 10,
+        max_steps: int = 10_000,
+    ):
+        assert (
+            len(yaml_file_paths) == self.num_envs and len(csv_file_paths) == self.num_envs
+        ), "Provide num_envs YAML/CSV paths"
 
         # Infer env name from YAMLs and ensure env is built
         env_name = self._infer_env_name_from_yaml(yaml_file_paths)
@@ -699,15 +812,17 @@ class MotionCollector:
             sol_quad_x_e = data_e[DatasetKeys.SOL_QUAD_X]
             sol_robot_quat_e = data_e[DatasetKeys.SOL_QUAD_QUAT]
             sol_payload_rpy_e = data_e[DatasetKeys.SOL_PAYLOAD_RPY]
-            traj_data.append({
-                "times": times_e,
-                "sol_quad_x": sol_quad_x_e,
-                "sol_robot_quat": sol_robot_quat_e,
-                "sol_payload_rpy": sol_payload_rpy_e,
-                "sol_x": sol_x_e,
-                "sol_u": sol_u_e,
-                "robot_goal": sol_x_e[-1, 0:3],  # FIXME FIXME
-            })
+            traj_data.append(
+                {
+                    "times": times_e,
+                    "sol_quad_x": sol_quad_x_e,
+                    "sol_robot_quat": sol_robot_quat_e,
+                    "sol_payload_rpy": sol_payload_rpy_e,
+                    "sol_x": sol_x_e,
+                    "sol_u": sol_u_e,
+                    "robot_goal": sol_x_e[-1, 0:3],  # FIXME FIXME
+                }
+            )
 
         im_plots = None
         depth_images = [[] for _ in range(self.num_envs)]
@@ -719,8 +834,8 @@ class MotionCollector:
             device,
         )
         self.policy_model = policy_model
-        
-        # init states 
+
+        # init states
         env_ids = []
         env_id = 0
         td = traj_data[env_id]
@@ -732,7 +847,7 @@ class MotionCollector:
         robot_vel = np.array([0, 0, 0])
         robot_goal = td["robot_goal"]
         dof_pos = payload_rpy.tolist() if payload_rpy.shape[0] >= 3 else payload_rpy[:2].tolist()
-        
+
         # controller_state = np.zeros((self.mpc.nx,), dtype=np.float64)
         # controller_state[0:3] = payload_pos
         # controller_state[3:6] = payload_vel
@@ -764,7 +879,7 @@ class MotionCollector:
 
         for i in range(1000):
             if i % 100 == 0:
-                # init states 
+                # init states
                 env_ids = []
                 env_id = 0
                 td = traj_data[env_id]
@@ -775,8 +890,10 @@ class MotionCollector:
                 payload_vel = td["sol_x"][0, 3:6]
                 robot_vel = np.array([0, 0, 0])
                 robot_goal = td["robot_goal"]
-                dof_pos = payload_rpy.tolist() if payload_rpy.shape[0] >= 3 else payload_rpy[:2].tolist()
-                
+                dof_pos = (
+                    payload_rpy.tolist() if payload_rpy.shape[0] >= 3 else payload_rpy[:2].tolist()
+                )
+
                 # controller_state = np.zeros((self.mpc.nx,), dtype=np.float64)
                 # controller_state[0:3] = payload_pos
                 # controller_state[3:6] = payload_vel
@@ -811,10 +928,18 @@ class MotionCollector:
             for env_id in range(self.num_envs):
                 # FIXME Need to scale by 10.0 to get meters from range [0.0, 1.0]
                 frame = depth_tensor[env_id, 0] * DEPTH_SCALE_FACTOR
-                frame = torch.nn.functional.interpolate(frame.unsqueeze(0).unsqueeze(0), size=(64, 64), mode='bilinear', align_corners=False).squeeze(0).squeeze(0)
+                frame = (
+                    torch.nn.functional.interpolate(
+                        frame.unsqueeze(0).unsqueeze(0),
+                        size=(64, 64),
+                        mode='bilinear',
+                        align_corners=False,
+                    )
+                    .squeeze(0)
+                    .squeeze(0)
+                )
                 frame = frame.detach().cpu().numpy()
                 depth_images[env_id].append(frame)
-        
 
             images = []
             for env_id in range(self.num_envs):
@@ -823,7 +948,7 @@ class MotionCollector:
             if im_plots is None:
                 ncols = min(self.num_envs, 4)
                 nrows = int(np.ceil(self.num_envs / ncols))
-                fig, axes = plt.subplots(nrows, ncols, figsize=(4*ncols, 4*nrows))
+                fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 4 * nrows))
                 axes = np.atleast_1d(axes).ravel()
                 im_plots = []
                 for env_id in range(self.num_envs):
@@ -832,7 +957,7 @@ class MotionCollector:
                     ax.set_title(f"Depth Env{env_id} Cam0")
                     ax.axis('off')
                     im_plots.append(im)
-                for ax in axes[self.num_envs:]:
+                for ax in axes[self.num_envs :]:
                     ax.axis('off')
                 plt.tight_layout()
             else:
@@ -842,19 +967,36 @@ class MotionCollector:
 
             self.env_manager.step(actions=actions)
 
-            desired_positions, desired_payload_positions, desired_vel, desired_payload_vel, desired_quats = self.get_next_desired_states(
-                payload_pos, payload_vel, robot_pos, robot_vel,
-                quat_xyzw, robot_goal, frame)
+            (
+                desired_positions,
+                desired_payload_positions,
+                desired_vel,
+                desired_payload_vel,
+                desired_quats,
+            ) = self.get_next_desired_states(
+                payload_pos, payload_vel, robot_pos, robot_vel, quat_xyzw, robot_goal, frame
+            )
 
             use_controller = False
             if use_controller:
-                next_robot_pos, next_quat, next_dof_pos_list, controller_state = self.run_controller(desired_positions, desired_quats, desired_payload_positions, controller_state)
+                next_robot_pos, next_quat, next_dof_pos_list, controller_state = (
+                    self.run_controller(
+                        desired_positions,
+                        desired_quats,
+                        desired_payload_positions,
+                        controller_state,
+                    )
+                )
             else:
                 idx = 1
                 next_robot_pos = desired_positions[idx, :]
                 next_quat = desired_quats[idx, :]
-                payload_vector = (desired_payload_positions[idx, :] - desired_positions[idx, :]) / 0.561
-                next_dof_pos_list = self.rpy_from_A_to_B(A=Rot.from_quat(next_quat).as_matrix()[:, 2], B=-payload_vector)
+                payload_vector = (
+                    desired_payload_positions[idx, :] - desired_positions[idx, :]
+                ) / 0.561
+                next_dof_pos_list = self.rpy_from_A_to_B(
+                    A=Rot.from_quat(next_quat).as_matrix()[:, 2], B=-payload_vector
+                )
 
                 payload_pos = desired_payload_positions[idx, :]
                 payload_vel = desired_payload_vel[idx, :]
@@ -868,15 +1010,16 @@ class MotionCollector:
                 positions=[next_robot_pos],
                 quat_xyzw_list=[next_quat],
                 dof_positions_list=[next_dof_pos_list],
-                dof_velocities_list=[[0.0]*len(next_dof_pos_list)],
+                dof_velocities_list=[[0.0] * len(next_dof_pos_list)],
                 zero_vel=True,
             )
 
-            # print next robot pos 
-            print(f"Step {i}: robot pos {next_robot_pos}, quat {next_quat}, dof {next_dof_pos_list}")
+            # print next robot pos
+            print(
+                f"Step {i}: robot pos {next_robot_pos}, quat {next_quat}, dof {next_dof_pos_list}"
+            )
             self.env_manager.render(render_components="sensors")
             self.env_manager.reset_terminated_and_truncated_envs()
-
 
             time.sleep(0.1)
 
@@ -885,6 +1028,7 @@ class MotionCollector:
         #     assert len(depth_images[i]) == traj_data[i]["sol_quad_x"].shape[0], "You have undersampled the trajectory!"
 
         return None
+
 
 if __name__ == "__main__":
     import argparse
@@ -901,7 +1045,7 @@ if __name__ == "__main__":
         seed=0,
         headless=False,
         use_warp=True,
-        viz_depth=args.viz
+        viz_depth=args.viz,
     )
 
     mc.get_depth_for_csvs_sequential("forests")

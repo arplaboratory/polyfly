@@ -66,11 +66,13 @@ from poly_fly.data_io.enums import DatasetKeys as DK, AttrKeys
 # Helpers
 # ────────────────────────────────────────────────────────────────────────────────
 
+
 def newest_csv(csv_dir: Path) -> Path:
     all_csv = list(csv_dir.rglob("*.csv"))
     if not all_csv:
         raise FileNotFoundError(f"No CSV files found under {csv_dir}")
     return max(all_csv, key=lambda p: p.stat().st_mtime)
+
 
 def draw_obstacles(ax, params, obstacle_color='#708090', obstacle_alpha=0.2):
     """Face-by-face obstacle rendering like plot.plot_result."""
@@ -202,6 +204,7 @@ def _nearest_time_index(t_array, t_val):
 # Interactive viewers
 # ────────────────────────────────────────────────────────────────────────────────
 
+
 def interactive_inspect(params, time, sol_x, sol_u, quad_pos, ortho=False, dpi=200):
     """Single-trajectory viewer with a step slider and Play/Pause."""
     fig = plt.figure(figsize=(10, 8), dpi=dpi)
@@ -294,10 +297,10 @@ def interactive_multi_csv_inspect(datasets, ortho=False, dpi=200):
     ax = fig.add_subplot(111, projection="3d")
 
     # Quaternion window state (persistent). Depth plotting removed.
-    depth_fig = None        # kept as handle for the external figure
-    depth_ax = None         # unused now, but kept to minimize surgery
-    data_im = None          # no longer used
-    depth_cbar = None       # no longer used
+    depth_fig = None  # kept as handle for the external figure
+    depth_ax = None  # unused now, but kept to minimize surgery
+    data_im = None  # no longer used
+    depth_cbar = None  # no longer used
     quat_ax = None
     vel_ax = None
     pvel_ax = None
@@ -321,8 +324,8 @@ def interactive_multi_csv_inspect(datasets, ortho=False, dpi=200):
         "playing": False,
         "s_step": None,
         # NEW: scatter artists
-        "future_scatter": None,           # robot future
-        "future_payload_scatter": None,   # payload future
+        "future_scatter": None,  # robot future
+        "future_payload_scatter": None,  # payload future
     }
 
     def ensure_data_window(ds):
@@ -334,7 +337,9 @@ def interactive_multi_csv_inspect(datasets, ortho=False, dpi=200):
 
         qdata = ds.get("robot_quat", None)
 
-        has_quat = qdata is not None and getattr(qdata, "shape", None) is not None and qdata.shape[-1] == 4
+        has_quat = (
+            qdata is not None and getattr(qdata, "shape", None) is not None and qdata.shape[-1] == 4
+        )
         vdata = ds["sol_quad_x"][:, 3:6]
         pvdata = ds["sol_x"][:, 3:6]
 
@@ -363,7 +368,7 @@ def interactive_multi_csv_inspect(datasets, ortho=False, dpi=200):
             labels = ["w", "x", "y", "z"]
             colors = ["tab:purple", "tab:blue", "tab:orange", "tab:green"]
             for j in range(4):
-                line, = quat_ax.plot(q[:, j], label=labels[j], color=colors[j], linewidth=1.2)
+                (line,) = quat_ax.plot(q[:, j], label=labels[j], color=colors[j], linewidth=1.2)
                 quat_lines.append(line)
             quat_ax.set_title("Robot quaternion (all steps)")
             quat_ax.set_xlabel("step")
@@ -382,7 +387,7 @@ def interactive_multi_csv_inspect(datasets, ortho=False, dpi=200):
             vcolors = ["tab:cyan", "tab:pink", "tab:olive"]
             for j in range(3):
                 vel_ax.plot(v[:, j], label=vlabels[j], color=vcolors[j], linewidth=1.2)
-            
+
             vel_ax.set_title("Robot velocity (all steps)")
             vel_ax.set_xlabel("step")
             vel_ax.set_ylabel("m/s")
@@ -493,20 +498,42 @@ def interactive_multi_csv_inspect(datasets, ortho=False, dpi=200):
         state["artists"] = build_dynamic_artists(ax, params)
 
         # Future scatters unchanged
-        if isinstance(future, np.ndarray) and future.ndim == 3 and future.shape[2] == 3 and future.shape[0] > 0:
+        if (
+            isinstance(future, np.ndarray)
+            and future.ndim == 3
+            and future.shape[2] == 3
+            and future.shape[0] > 0
+        ):
             pts0 = future[0]
             if pts0.size > 0:
                 state["future_scatter"] = ax.scatter(
-                    pts0[:, 0], pts0[:, 1], pts0[:, 2],
-                    s=12, c="tab:blue", alpha=0.8, depthshade=True, label="future robot"
+                    pts0[:, 0],
+                    pts0[:, 1],
+                    pts0[:, 2],
+                    s=12,
+                    c="tab:blue",
+                    alpha=0.8,
+                    depthshade=True,
+                    label="future robot",
                 )
 
-        if isinstance(future_payload, np.ndarray) and future_payload.ndim == 3 and future_payload.shape[2] == 3 and future_payload.shape[0] > 0:
+        if (
+            isinstance(future_payload, np.ndarray)
+            and future_payload.ndim == 3
+            and future_payload.shape[2] == 3
+            and future_payload.shape[0] > 0
+        ):
             ppts0 = future_payload[0]
             if ppts0.size > 0:
                 state["future_payload_scatter"] = ax.scatter(
-                    ppts0[:, 0], ppts0[:, 1], ppts0[:, 2],
-                    s=12, c="tab:orange", alpha=0.8, depthshade=True, label="future payload"
+                    ppts0[:, 0],
+                    ppts0[:, 1],
+                    ppts0[:, 2],
+                    s=12,
+                    c="tab:orange",
+                    alpha=0.8,
+                    depthshade=True,
+                    label="future payload",
                 )
 
         # Ensure only quaternion window is drawn
@@ -526,13 +553,21 @@ def interactive_multi_csv_inspect(datasets, ortho=False, dpi=200):
             )
 
             # Future scatters unchanged
-            if state.get("future_scatter", None) is not None and isinstance(future, np.ndarray) and i < future.shape[0]:
+            if (
+                state.get("future_scatter", None) is not None
+                and isinstance(future, np.ndarray)
+                and i < future.shape[0]
+            ):
                 pts = future[i]
                 if pts.ndim == 2 and pts.shape[1] == 3 and pts.shape[0] > 0:
                     xs, ys, zs = pts[:, 0], pts[:, 1], pts[:, 2]
                     state["future_scatter"]._offsets3d = (xs, ys, zs)
 
-            if state.get("future_payload_scatter", None) is not None and isinstance(future_payload, np.ndarray) and i < future_payload.shape[0]:
+            if (
+                state.get("future_payload_scatter", None) is not None
+                and isinstance(future_payload, np.ndarray)
+                and i < future_payload.shape[0]
+            ):
                 ppts = future_payload[i]
                 if ppts.ndim == 2 and ppts.shape[1] == 3 and ppts.shape[0] > 0:
                     px, py, pz = ppts[:, 0], ppts[:, 1], ppts[:, 2]
@@ -600,6 +635,7 @@ def interactive_multi_csv_inspect(datasets, ortho=False, dpi=200):
 # Batch helpers and video writer
 # ────────────────────────────────────────────────────────────────────────────────
 
+
 def build_datasets_from_folder(folder_path: Path, args, limit=10):
     """
     Load every CSV in folder (recursive), compute quad positions.
@@ -648,6 +684,7 @@ def build_datasets_from_folder(folder_path: Path, args, limit=10):
         ds["robot_quat"] = sol_robot_quat
         datasets.append(ds)
     return datasets
+
 
 def run_for_csv(csv_path: Path, args):
     base, csv_dir, params_dir = find_base_dirs()
@@ -744,6 +781,7 @@ def run_for_csv(csv_path: Path, args):
     else:
         plt.close(fig)
 
+
 def main():
     base, csv_dir, params_dir = find_base_dirs()
 
@@ -830,7 +868,7 @@ def main():
 
 
 if __name__ == "__main__":
-    # Example usage 
+    # Example usage
     # python create_video.py --inspect --no-video --combined --csv_folder forests
     # python create_video.py --inspect --no-video --combined --csv forests/forest_011_s3130833813.csv --yaml forests/forest_011_s3130833813.yaml
     main()

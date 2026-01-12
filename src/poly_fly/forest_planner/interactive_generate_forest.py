@@ -21,9 +21,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import openai
 import dotenv
+
 dotenv.load_dotenv()
 from poly_fly.forest_planner.generate_forest import ForestGenerator, ObstacleGenerationException
-from poly_fly.forest_planner.forest_params import ForestParamsSmall  # NEW: use smaller obstacles for interactive regen
+from poly_fly.forest_planner.forest_params import (
+    ForestParamsSmall,
+)  # NEW: use smaller obstacles for interactive regen
 from poly_fly.optimal_planner.planner import (
     interpolate_distance,
 )
@@ -90,7 +93,16 @@ def draw_forest(ax, forest, goal):
 
 # ───────────────────────── interactive figure class ──────────────────────
 class ForestChooser:
-    def __init__(self, dist_mode=None, forest=None, goal=None, X_LENGTH_PLT=12, Y_WIDTH_PLT=6, GOAL_X_PLT=12, GOAL_Y_PLT=0):
+    def __init__(
+        self,
+        dist_mode=None,
+        forest=None,
+        goal=None,
+        X_LENGTH_PLT=12,
+        Y_WIDTH_PLT=6,
+        GOAL_X_PLT=12,
+        GOAL_Y_PLT=0,
+    ):
         # dist_mode kept for backward compatibility; ForestGenerator now uses ForestParams
 
         self.choice = None  # 'c', 'q', None
@@ -159,19 +171,18 @@ class ForestChooser:
         if prompt is None:
             print("ERROR: Regeneration via GPT requires a prompt.")
             return
-        
+
         CSV_TEXT = get_chatgpt_response(
             prompt.strip(),
-            X_LENGTH=self.X_LENGTH_PLT, 
-            Y_WIDTH=self.Y_WIDTH_PLT, 
-            GOAL_X=self.GOAL_X_PLT, 
-            GOAL_Y=self.GOAL_Y_PLT, 
+            X_LENGTH=self.X_LENGTH_PLT,
+            Y_WIDTH=self.Y_WIDTH_PLT,
+            GOAL_X=self.GOAL_X_PLT,
+            GOAL_Y=self.GOAL_Y_PLT,
         )
         self.forest = csv_to_forest(CSV_TEXT)
 
         custom_goal = (self.GOAL_X_PLT, self.GOAL_Y_PLT, 0)
-            
-    
+
         self.fg.set_forest(self.forest)
         self.goal = custom_goal
         self.fg.set_goal(*self.goal)
@@ -193,7 +204,9 @@ class ForestChooser:
 
         print_trajectory_info(sol_values, sol_opt, self.fg.planner)
 
-        t, x, u = interpolate_distance(self.fg.planner.params, sol_values, ds=0.25, append_zero=False)
+        t, x, u = interpolate_distance(
+            self.fg.planner.params, sol_values, ds=0.25, append_zero=False
+        )
         plotter.plot_result(
             self.fg.planner.params,
             x,
@@ -227,15 +240,15 @@ def csv_to_forest(csv_text: str, *, trunk_half_height=3.0):
     """
     forest = []
     reader = csv.reader(io.StringIO(csv_text.strip()))
-    for x, y, w_full, h_full in reader: # Changed w, h to w_full, h_full for clarity
+    for x, y, w_full, h_full in reader:  # Changed w, h to w_full, h_full for clarity
         forest.append(
             dict(
-                x=float(x), 
-                y=float(y), 
+                x=float(x),
+                y=float(y),
                 z=0.0,
-                xl=float(w_full) / 2.0, 
-                yl=float(h_full) / 2.0, 
-                zl=trunk_half_height, 
+                xl=float(w_full) / 2.0,
+                yl=float(h_full) / 2.0,
+                zl=trunk_half_height,
             )
         )
     return forest
@@ -290,6 +303,7 @@ def compose_gpt_prompt(X_LENGTH=16, Y_WIDTH=6, START_X=0, START_Y=0, GOAL_X=15, 
         MIN_GAP = 1.5
         """
 
+
 def get_chatgpt_response(prompt, X_LENGTH=13, Y_WIDTH=3, START_X=0, START_Y=0, GOAL_X=12, GOAL_Y=0):
     full_prompt = compose_gpt_prompt(X_LENGTH, Y_WIDTH, START_X, START_Y, GOAL_X, GOAL_Y)
     client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -299,7 +313,7 @@ def get_chatgpt_response(prompt, X_LENGTH=13, Y_WIDTH=3, START_X=0, START_Y=0, G
         messages=[
             {"role": "system", "content": full_prompt},
             {"role": "user", "content": prompt},
-        ]
+        ],
     )
     print("Successfully got response from GPT")
     print("GPT Response:\n", response)
@@ -327,18 +341,18 @@ if __name__ == "__main__":
     Y_WIDTH_PLT = 4
     GOAL_X_PLT = 12
     GOAL_Y_PLT = 0
-    
-    prompt = input("Enter a prompt for the forest: ") 
+
+    prompt = input("Enter a prompt for the forest: ")
     """
     Example prompt to gpt:
     Create 5 large box obstacles (1.0x1.0) along the centerline (Y=0) between X=2 and X=12, staggered slightly off-center (alternating Y=+/-0.5m) to force an S-curve path, ensuring all obstacles maintain the minimum gap of 1.5m for feasibility.
     """
     CSV_TEXT = get_chatgpt_response(
         prompt.strip(),
-        X_LENGTH=X_LENGTH_PLT, 
-        Y_WIDTH=Y_WIDTH_PLT,   
-        GOAL_X=GOAL_X_PLT,     
-        GOAL_Y=GOAL_Y_PLT,     
+        X_LENGTH=X_LENGTH_PLT,
+        Y_WIDTH=Y_WIDTH_PLT,
+        GOAL_X=GOAL_X_PLT,
+        GOAL_Y=GOAL_Y_PLT,
     )
 
     custom_forest = csv_to_forest(CSV_TEXT)

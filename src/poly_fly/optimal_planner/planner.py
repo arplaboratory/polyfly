@@ -41,10 +41,19 @@ from poly_fly.utils.utils import (
     yamlToDict,
     rotation_matrix_from_a_to_b,
     rpy_from_a_to_b,
-    get_yaw_along_trajectory
+    get_yaw_along_trajectory,
 )
-from poly_fly.data_io.utils import save_csv_arrays, save_params, save_all, BASE_DIR, PARAMS_DIR, \
-    GIFS_DIR, CSV_DIR, IMG_DIR, get_rotation_matrix_from_quat
+from poly_fly.data_io.utils import (
+    save_csv_arrays,
+    save_params,
+    save_all,
+    BASE_DIR,
+    PARAMS_DIR,
+    GIFS_DIR,
+    CSV_DIR,
+    IMG_DIR,
+    get_rotation_matrix_from_quat,
+)
 from poly_fly.data_io.enums import DatasetKeys, AttrKeys
 
 
@@ -664,11 +673,11 @@ class Planner:
             self.opti.set_initial(self.variables[f"omega_quad_{idx}"][i], 0.1)
 
     def setup(self, viz_cb=False, warm=False, plot_global_planner=False):
-        
+
         self.opti = ca.Opti()
         option = {
             "verbose": True,
-            "ipopt.print_level": 5, # 5 for prints
+            "ipopt.print_level": 5,  # 5 for prints
             "ipopt.max_iter": 1000,  # Increase the maximum number of iterations
             "ipopt.warm_start_init_point": "yes",
             "ipopt.warm_start_bound_push": 1e-3,
@@ -680,11 +689,11 @@ class Planner:
             "ipopt.acceptable_tol": 1e-4,
             "expand": True,
             "ipopt.linear_solver": "ma57",  # Use faster linear solver
-            "ipopt.hsllib": "/usr/local/lib/libhsl.so"
+            "ipopt.hsllib": "/usr/local/lib/libhsl.so",
             # "ipopt.mu_strategy": "adaptive",
             # "ipopt.limited_memory_update_type": "bfgs",  # More robust than SR1
             # "ipopt.mu_init: 0.1"
-        }        
+        }
         if warm:
             option["ipopt.mu_init"] = 1e-6
             option["ipopt.bound_relax_factor"] = 1e-9
@@ -752,7 +761,7 @@ class Planner:
                 dv = float(np.min(dists_v)) if dists_v.size > 0 else float("inf")
                 if dv < dmin_vertices:
                     dmin_vertices = dv
-    
+
             # Overall min distance: consider both center and corners
             dmin = min(dmin_center, dmin_vertices)
 
@@ -782,30 +791,53 @@ class Planner:
             x_min, x_max = x - l / 2.0, x + l / 2.0
             y_min, y_max = y - b / 2.0, y + b / 2.0
 
-            tgt_ox, tgt_oy = (ox_in, oy_in) if (idx < len(self.inside_tube) and self.inside_tube[idx]) else (ox_out, oy_out)
+            tgt_ox, tgt_oy = (
+                (ox_in, oy_in)
+                if (idx < len(self.inside_tube) and self.inside_tube[idx])
+                else (ox_out, oy_out)
+            )
 
             # Horizontal edges
             n_l = max(int(round(l / step)), 1)
             for i in range(n_l + 1):
                 xi = x_min + i * (l / n_l)
-                tgt_ox.append(xi); tgt_oy.append(y_min)
-                tgt_ox.append(xi); tgt_oy.append(y_max)
+                tgt_ox.append(xi)
+                tgt_oy.append(y_min)
+                tgt_ox.append(xi)
+                tgt_oy.append(y_max)
 
             # Vertical edges
             n_b = max(int(round(b / step)), 1)
             for j in range(n_b + 1):
                 yj = y_min + j * (b / n_b)
-                tgt_ox.append(x_min); tgt_oy.append(yj)
-                tgt_ox.append(x_max); tgt_oy.append(yj)
+                tgt_ox.append(x_min)
+                tgt_oy.append(yj)
+                tgt_ox.append(x_max)
+                tgt_oy.append(yj)
 
         # Plot
         plt.figure()
         # Interpolated XY path
         if self.interpolated_positions is not None and self.interpolated_positions.shape[1] > 0:
-            plt.plot(self.interpolated_positions[0, :], self.interpolated_positions[1, :], "-g", label="interpolated path")
+            plt.plot(
+                self.interpolated_positions[0, :],
+                self.interpolated_positions[1, :],
+                "-g",
+                label="interpolated path",
+            )
             # Mark start/end
-            plt.plot(self.interpolated_positions[0, 0], self.interpolated_positions[1, 0], "og", label="start")
-            plt.plot(self.interpolated_positions[0, -1], self.interpolated_positions[1, -1], "xb", label="goal")
+            plt.plot(
+                self.interpolated_positions[0, 0],
+                self.interpolated_positions[1, 0],
+                "og",
+                label="start",
+            )
+            plt.plot(
+                self.interpolated_positions[0, -1],
+                self.interpolated_positions[1, -1],
+                "xb",
+                label="goal",
+            )
 
         if len(ox_in) > 0:
             plt.plot(ox_in, oy_in, ".r", label="obstacles (inside tube)")
@@ -819,7 +851,9 @@ class Planner:
         except Exception:
             pass
 
-        plt.title(f"Tube selection: {sum(self.inside_tube)} inside, {len(self.inside_tube) - sum(self.inside_tube)} outside")
+        plt.title(
+            f"Tube selection: {sum(self.inside_tube)} inside, {len(self.inside_tube) - sum(self.inside_tube)} outside"
+        )
         plt.grid(True)
         plt.axis("equal")
         plt.legend()
@@ -976,8 +1010,8 @@ class Planner:
 
         R = np.column_stack((b1c, b2c, b3c))
         orientation = R  # Rotation matrix
-        quat = Rot.from_matrix(R).as_quat() # returns x, y, z, w
-        
+        quat = Rot.from_matrix(R).as_quat()  # returns x, y, z, w
+
         pos_payload = np.array([x[0], x[1], x[2]])
         pos_quad = pos_payload + (force / np.linalg.norm(force)) * params.cable_length
 
@@ -986,7 +1020,7 @@ class Planner:
         vel_quad = vel_payload - params.cable_length * pdot
         acc_quad = acc_payload - params.cable_length * pddot
 
-        payload_vector = (pos_payload - pos_quad)/params.cable_length
+        payload_vector = (pos_payload - pos_quad) / params.cable_length
 
         # Rotation matrix from quad to payload
         # so that R[:,2] is the z axis of the quadrotor
@@ -1002,7 +1036,7 @@ class Planner:
             "acc_quad": acc_quad,
             "payload_rpy": rpy,
         }
-    
+
     @staticmethod
     def rpy_from_A_to_B(A, B, eps=1e-12):
         a = A / np.linalg.norm(A)
@@ -1016,12 +1050,11 @@ class Planner:
                 return np.eye(3)
             # opposite: choose any axis orthogonal to a
             e = np.array([1.0, 0.0, 0.0]) if abs(a[0]) < 0.9 else np.array([0.0, 1.0, 0.0])
-            u = np.cross(a, e); u /= np.linalg.norm(u)
+            u = np.cross(a, e)
+            u /= np.linalg.norm(u)
             return -np.eye(3) + 2.0 * np.outer(u, u)
 
-        vx = np.array([[0, -v[2], v[1]],
-                    [v[2], 0, -v[0]],
-                    [-v[1], v[0], 0]])
+        vx = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
         rot_mat = np.eye(3) + vx + vx @ vx * ((1 - c) / (s**2))
 
         yaw, pitch, roll = Rot.from_matrix(rot_mat).as_euler('zyx', degrees=False)
@@ -1245,7 +1278,7 @@ def save_result(file_dir, params, sol_values, dt=0.002, plot=False):
 
     # Interpolate results
     interpolated_time, interpolated_x, interpolated_u = interpolate(params, sol_values, dt=dt)
-    
+
     if plot:
         fig, axs = plt.subplots(sol_x.shape[1] + sol_u.shape[1], 1, figsize=(10, 15))
         for i in range(sol_x.shape[1]):  # Plot states
@@ -1284,27 +1317,34 @@ def save_result(file_dir, params, sol_values, dt=0.002, plot=False):
         a = interpolated_x[i, 6:9]
         jrk = interpolated_u[i, :3]
         result = Planner.differential_flatness(x, v, a, jrk, params)
-        interpolated_quad_x[i, :] = np.concatenate((result["pos_quad"], result["vel_quad"], result["acc_quad"]))
+        interpolated_quad_x[i, :] = np.concatenate(
+            (result["pos_quad"], result["vel_quad"], result["acc_quad"])
+        )
         interpolated_quad_quat[i, :] = result["quat"]
         interpolated_payload_rpy[i, :] = result["payload_rpy"]
 
     # save_csv_arrays(filedir_csv, interpolated_time, interpolated_x, interpolated_u, interpolated_quad_x)
     # save_params(filedir_params, params)
 
-    interpolated_yaw, interpolated_quad_quat = get_yaw_along_trajectory(interpolated_x[:, :3], interpolated_x[:, 3:6], interpolated_quad_quat, interpolated_time)
+    interpolated_yaw, interpolated_quad_quat = get_yaw_along_trajectory(
+        interpolated_x[:, :3], interpolated_x[:, 3:6], interpolated_quad_quat, interpolated_time
+    )
     interpolated_rot_mat = get_rotation_matrix_from_quat(interpolated_quad_quat)
-    save_all({
-        AttrKeys.STEM: filename,
-        AttrKeys.CSV_SUBDIRECTORY: subdirectory,
-        DatasetKeys.TIME: interpolated_time,
-        DatasetKeys.SOL_X: interpolated_x,
-        DatasetKeys.SOL_U: interpolated_u,
-        DatasetKeys.SOL_QUAD_X: interpolated_quad_x,
-        DatasetKeys.SOL_QUAD_QUAT: interpolated_quad_quat,
-        DatasetKeys.SOL_PAYLOAD_RPY: interpolated_payload_rpy,
-        DatasetKeys.PARAMS: params,
-        DatasetKeys.ROT_MAT: interpolated_rot_mat,
-    })
+    save_all(
+        {
+            AttrKeys.STEM: filename,
+            AttrKeys.CSV_SUBDIRECTORY: subdirectory,
+            DatasetKeys.TIME: interpolated_time,
+            DatasetKeys.SOL_X: interpolated_x,
+            DatasetKeys.SOL_U: interpolated_u,
+            DatasetKeys.SOL_QUAD_X: interpolated_quad_x,
+            DatasetKeys.SOL_QUAD_QUAT: interpolated_quad_quat,
+            DatasetKeys.SOL_PAYLOAD_RPY: interpolated_payload_rpy,
+            DatasetKeys.PARAMS: params,
+            DatasetKeys.ROT_MAT: interpolated_rot_mat,
+        }
+    )
+
 
 def save_images(
     file_dir, params, sol_values, differential_flatness, compute_quadrotor_rotation_matrix_no_jrk
@@ -1471,6 +1511,7 @@ def experiments():
             f"{yamls[i]}: Traj: {total_times[i]:.2f} , Iterations: {iterations[i]}, Opt Time: {opt_times[i]:.2f}(s), Path Length: {path_lengths[i]:.2f}(m)"
         )
 
+
 def run_single_yaml(path_to_yaml):
     """
     Run optimization for a single YAML file and print a concise summary.
@@ -1535,7 +1576,7 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Relative path (from PARAMS_DIR) to a single YAML file to solve, "
-             "e.g. 'experiments/maze_1.yaml'. If omitted, runs the default experiments().",
+        "e.g. 'experiments/maze_1.yaml'. If omitted, runs the default experiments().",
     )
     args = parser.parse_args()
 

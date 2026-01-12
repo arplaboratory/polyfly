@@ -1,6 +1,7 @@
 import numpy as np  # needed for goal_y_candidates
 
-class ForestParamsLarge():
+
+class ForestParamsLarge:
     def __init__(self):
         # obstacle half-size ranges
         self.large_size_l_range = (0.8, 0.8)
@@ -9,7 +10,7 @@ class ForestParamsLarge():
         self.small_size_b_range = (0.5, 0.5)
 
         self.n_large_obs = 8
-        self.n_small_obs = 0 
+        self.n_small_obs = 0
 
         # obstacle geometry
         self.central_trunk = True
@@ -36,7 +37,8 @@ class ForestParamsLarge():
         self.goal_z = 0.0
         self.goal_y_candidates = np.linspace(-2.0, 2.0, 17)
 
-class ForestParamsSmall():
+
+class ForestParamsSmall:
     def __init__(self):
         # obstacle half-size ranges
         self.large_size_l_range = (0.8, 0.8)
@@ -46,7 +48,6 @@ class ForestParamsSmall():
 
         self.n_large_obs = 0
         self.n_small_obs = 15
-        
 
         # obstacle geometry
         self.central_trunk = False
@@ -74,9 +75,11 @@ class ForestParamsSmall():
         self.goal_z = 0.0
         self.goal_y_candidates = np.linspace(-2.0, 2.0, 17)
 
+
 # Constants exported for selection (ids used elsewhere across the codebase)
 FOREST_SMALL_OBS = {"id": 0, "class": ForestParamsSmall}
 FOREST_LARGE_OBS = {"id": 2, "class": ForestParamsLarge}
+
 
 def get_forest_params(forest_type: int):
     """
