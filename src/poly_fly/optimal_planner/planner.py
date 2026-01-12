@@ -4,6 +4,7 @@ os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 
+import argparse
 import csv
 import copy
 import os
@@ -1440,17 +1441,15 @@ def run(
 
 def experiments():
     yamls = [
-        "autotrans/maze_1.yaml",
-        "autotrans/maze_2.yaml",
-        "autotrans/maze_3.yaml",
-        "autotrans/maze_4.yaml",
-        "autotrans/maze_5.yaml",
-        "autotrans/maze_6.yaml",
-        "autotrans/maze_7.yaml",
-        "autotrans/maze_8.yaml",
-        "autotrans/maze_9.yaml",
-        "orientation_benefits/collision.yaml",
-        "orientation_benefits/no_collision.yaml",
+        "experiments/maze_1.yaml",
+        "experiments/maze_2.yaml",
+        "experiments/maze_3.yaml",
+        "experiments/maze_4.yaml",
+        "experiments/maze_5.yaml",
+        "experiments/maze_6.yaml",
+        "experiments/maze_7.yaml",
+        "experiments/maze_8.yaml",
+        "experiments/maze_9.yaml",
     ]
 
     total_times = []
@@ -1472,42 +1471,24 @@ def experiments():
             f"{yamls[i]}: Traj: {total_times[i]:.2f} , Iterations: {iterations[i]}, Opt Time: {opt_times[i]:.2f}(s), Path Length: {path_lengths[i]:.2f}(m)"
         )
 
+def run_single_yaml(path_to_yaml):
+    """
+    Run optimization for a single YAML file and print a concise summary.
+    """
+    print("------------------------------------")
+    print(f"Solving single YAML: {path_to_yaml}")
+    print("------------------------------------")
 
-def weight_study():
-    yamls = [
-        "init_weight_study/maze_1_0.yaml",
-        "init_weight_study/maze_1_1.yaml",
-        "init_weight_study/maze_1_5.yaml",
-        "init_weight_study/maze_2_0.yaml",
-        "init_weight_study/maze_2_1.yaml",
-        "init_weight_study/maze_2_5.yaml",
-        "init_weight_study/maze_3_0.yaml",
-        "init_weight_study/maze_3_1.yaml",
-        "init_weight_study/maze_3_5.yaml",
-        "init_weight_study/maze_4_0.yaml",
-        "init_weight_study/maze_4_1.yaml",
-        "init_weight_study/maze_4_5.yaml",
-        "init_weight_study/maze_5_0.yaml",
-        "init_weight_study/maze_5_1.yaml",
-        "init_weight_study/maze_5_5.yaml",
-        "init_weight_study/maze_6_0.yaml",
-        "init_weight_study/maze_6_1.yaml",
-        "init_weight_study/maze_6_5.yaml",
-        "init_weight_study/maze_7_0.yaml",
-        "init_weight_study/maze_7_1.yaml",
-        "init_weight_study/maze_7_5.yaml",
-        "init_weight_study/maze_8_0.yaml",
-        "init_weight_study/maze_8_1.yaml",
-        "init_weight_study/maze_8_5.yaml",
-    ]
+    total_time, opt_sol, opt_sol_values, iteration, opt_time, path_length = run(
+        path_to_yaml, plot=True, plot_interpolated=False, plot_times=False, save_fig=False
+    )
 
-    total_times = []
-    for path_to_yaml in yamls:
-        total_time, opt_sol, opt_sol_values, iteration, opt_time = run(path_to_yaml, plot=True)
-        total_times.append(total_time)
-
-    for i in range(len(yamls)):
-        print(f"{yamls[i]}: {total_times[i]} ")
+    print("\nSummary")
+    print(
+        f"{path_to_yaml}: Traj: {total_time:.2f} , "
+        f"Iterations: {iteration}, Opt Time: {opt_time:.2f}(s), "
+        f"Path Length: {path_length:.2f}(m)"
+    )
 
 
 def one_run(core_ids):
@@ -1548,6 +1529,17 @@ def run_mp():
 
 
 if __name__ == "__main__":
-    # run_mp()
-    experiments()
-    # weight_study()
+    parser = argparse.ArgumentParser(description="PolyFly optimal planner entry point")
+    parser.add_argument(
+        "--yaml",
+        type=str,
+        default=None,
+        help="Relative path (from PARAMS_DIR) to a single YAML file to solve, "
+             "e.g. 'experiments/maze_1.yaml'. If omitted, runs the default experiments().",
+    )
+    args = parser.parse_args()
+
+    if args.yaml is not None:
+        run_single_yaml(args.yaml)
+    else:
+        experiments()

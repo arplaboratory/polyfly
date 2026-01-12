@@ -19,7 +19,7 @@ Examples
 python create_video.py
 
 # Single CSV
-python create_video.py --csv csvs/autotrans/maze_1.csv
+python create_video.py --csv csvs/experiments/maze_1.csv
 
 # Batch over a folder
 python create_video.py --csvs_folder forests/
@@ -58,7 +58,6 @@ from poly_fly.data_io.utils import (
     load,
     guess_yaml_from_csv,
     find_base_dirs,
-    ZARR_DIR,
 )
 from poly_fly.data_io.enums import DatasetKeys as DK, AttrKeys
 
@@ -650,51 +649,6 @@ def build_datasets_from_folder(folder_path: Path, args, limit=10):
         datasets.append(ds)
     return datasets
 
-def build_datasets_from_zarr_folder(zarr_path: Path, args, limit=10):
-    """
-    Load every trajectory in a Zarr dataset and package for the multi-view inspector.
-    Returns list of dicts: { 'name', 'params', 'time', 'sol_x', 'sol_u', 'quad_pos', 'path',
-                             optional: 'future_robot_pos', 'future_payload_pos' }
-    """
-    try:
-        import zarr
-    except Exception as e:
-        raise ImportError("Please install zarr and numcodecs: pip install zarr numcodecs") from e
-
-    if not zarr_path.exists():
-        raise FileNotFoundError(f"Zarr dataset not found: {zarr_path}")
-
-    res, trajs_grp, keys = load_dataset_zarr(str(zarr_path), limit=limit)
-
-    idxs = list(range(len(keys)))
-    if getattr(args, "combined", False) and len(idxs) > limit:
-        total = len(idxs)
-        idxs = sorted(random.sample(idxs, k=limit))
-        print(f"[MULTI-VIEW] --combined: randomly sampled {len(idxs)} trajs from {total} total.")
-
-    datasets = []
-    for i in idxs:
-        key = keys[i]
-        g = trajs_grp[key]
-        name = g.attrs.get("stem", key)
-
-        time, sol_x, sol_u, sol_quad_x, sol_quad_quat, payload_rpy, params, future_robot_pos, future_payload_pos = res[i]
-        quad_pos = sol_quad_x[:, :3]
-
-        ds = dict(
-            name=name,
-            params=params,
-            time=time,
-            sol_x=sol_x,
-            sol_u=sol_u,
-            quad_pos=quad_pos,
-            path=zarr_path,
-        )
-        ds["future_robot_pos"] = future_robot_pos
-        ds["future_payload_pos"] = future_payload_pos
-        datasets.append(ds)
-    return datasets
-
 def run_for_csv(csv_path: Path, args):
     base, csv_dir, params_dir = find_base_dirs()
 
@@ -790,77 +744,6 @@ def run_for_csv(csv_path: Path, args):
     else:
         plt.close(fig)
 
-def run_for_zarr(zarr_path: Path, args):
-    # Load first trajectory by default
-    if not zarr_path.exists():
-        raise FileNotFoundError(f"Zarr dataset not found: {zarr_path}")
-    res = load_dataset_zarr(str(zarr_path))
-    time, sol_x, sol_u, sol_quad_x, sol_quad_quat, payload_rpy, params, future_robot_pos, future_payload_pos = res[0]
-    quad_pos = sol_quad_x[:, :3]
-
-    base, csv_dir, params_dir = find_base_dirs()
-    # Output path
-    if args.out:
-        out_path = Path(args.out)
-    else:
-        out_root = base / "videos" / "from_zarr"
-        out_path = (out_root / zarr_path.stem).with_suffix(".mp4")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Figure and axes
-    fig = plt.figure(figsize=(10, 8), dpi=args.dpi)
-    ax = fig.add_subplot(111, projection="3d")
-
-    # Obstacles (likely none if params missing)
-    obs_list = draw_obstacles(ax, params)
-    for poly in obs_list:
-        ax.add_collection3d(poly)
-
-    set_axes_limits(ax, params, sol_x)
-
-    if args.ortho:
-        ax.view_init(elev=90, azim=-180)
-        try:
-            ax.set_proj_type('ortho')
-        except Exception:
-            pass
-
-    artists = build_dynamic_artists(ax, params)
-
-    frame_idx = _choose_frame_indices_by_time(time, args.fps, args.speed)
-    t = np.asarray(time, dtype=float)[frame_idx]
-    dt = np.diff(t, prepend=t[0])
-    repeats = np.maximum(1, np.round((dt * args.fps) / max(args.speed, 1e-6)).astype(int))
-
-    writer = None
-    use_gif = args.gif
-    if not use_gif:
-        try:
-            writer = animation.FFMpegWriter(fps=args.fps)
-        except Exception:
-            use_gif = True
-    if use_gif:
-        writer = animation.PillowWriter(fps=args.fps)
-        out_path = out_path.with_suffix(".gif")
-
-    if not args.no_video:
-        print(f"[INFO] Writing {'GIF' if use_gif else 'MP4'} to: {out_path} (fps={args.fps}, speed={args.speed})")
-        with writer.saving(fig, str(out_path), dpi=args.dpi):
-            for k in frame_idx:
-                pL = sol_x[k, 0:3]
-                aL = sol_x[k, 6:9]
-                pQ = quad_pos[k, :]
-                update_dynamic_artists(artists, params, pL, pQ, aL)
-                for _ in range(int(repeats[np.where(frame_idx == k)[0][0]])):
-                    writer.grab_frame()
-        print(f"[DONE] Saved: {out_path}")
-
-    if args.inspect:
-        plt.close(fig)
-        interactive_inspect(params, time, sol_x, sol_u, quad_pos, ortho=args.ortho, dpi=args.dpi)
-    else:
-        plt.close(fig)
-
 def main():
     base, csv_dir, params_dir = find_base_dirs()
 
@@ -913,26 +796,7 @@ def main():
         action="store_true",
         help="With --csv_folder and --inspect, open one viewer with a csv_selection slider",
     )
-    ap.add_argument(
-        "--zarr",
-        type=str,
-        default=None,
-        help="Path to a Zarr dataset directory; if set, visualize/load from Zarr instead of CSVs",
-    )
     args = ap.parse_args()
-
-    # NEW: Zarr mode (takes precedence)
-    if args.zarr:
-        zpath = Path(args.zarr)
-        zpath = (ZARR_DIR / zpath).with_suffix(".zarr")
-        # Multi-view over all Zarr trajectories
-        if args.inspect and args.combined:
-            datasets = build_datasets_from_zarr_folder(zpath, args)
-            interactive_multi_csv_inspect(datasets, ortho=args.ortho, dpi=args.dpi)
-            return
-        # Default: render single (first) trajectory from Zarr
-        run_for_zarr(zpath, args)
-        return
 
     # Folder mode
     folder_arg = args.csvs_folder or args.csv_folder
