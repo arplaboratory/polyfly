@@ -14,6 +14,7 @@ import time
 import yaml
 import multiprocessing as mp
 from dataclasses import asdict
+import warnings
 
 import casadi as ca
 import matplotlib as mpl
@@ -71,6 +72,24 @@ class Planner:
         self.params = params
         self.plot = plot
         self.global_planner_explored_nodes = None  # Initialize explored nodes storage
+        self.libhsl_dir = None
+        self.solver = None
+
+        libhsl_dir = os.getenv("LIBHSL_DIR")
+        if libhsl_dir:
+            lib_path = Path(libhsl_dir) / "lib" / "libcoinhsl.so"
+            if lib_path.exists():
+                self.libhsl_dir = str(Path(libhsl_dir))
+                self.solver = "ma57"
+            else:
+                warnings.warn(
+                    "LIBHSL_DIR is set but libcoinhsl.so not found in "
+                    f"{lib_path.parent}. Using default IPOPT solver."
+                )
+        else:
+            warnings.warn(
+                "LIBHSL_DIR environment variable not set. Using default IPOPT solver."
+            )
 
         x_sym = ca.MX.sym('x', self.N_STATES, 1)
         u_sym = ca.MX.sym('u', self.N_INPUTS, 1)
@@ -673,11 +692,11 @@ class Planner:
             self.opti.set_initial(self.variables[f"omega_quad_{idx}"][i], 0.1)
 
     def setup(self, viz_cb=False, warm=False, plot_global_planner=False):
-
         self.opti = ca.Opti()
+
         option = {
-            "verbose": True,
-            "ipopt.print_level": 5,  # 5 for prints
+            "verbose": False,
+            "ipopt.print_level": 0,  # 5 for prints
             "ipopt.max_iter": 1000,  # Increase the maximum number of iterations
             "ipopt.warm_start_init_point": "yes",
             "ipopt.warm_start_bound_push": 1e-3,
@@ -688,12 +707,14 @@ class Planner:
             "ipopt.fast_step_computation": "yes",
             "ipopt.acceptable_tol": 1e-4,
             "expand": True,
-            "ipopt.linear_solver": "ma57",  # Use faster linear solver
-            "ipopt.hsllib": "/usr/local/lib/libhsl.so",
             # "ipopt.mu_strategy": "adaptive",
             # "ipopt.limited_memory_update_type": "bfgs",  # More robust than SR1
             # "ipopt.mu_init: 0.1"
         }
+        if self.solver is not None and self.libhsl_dir is not None:
+            option["ipopt.linear_solver"] = self.solver
+            option["ipopt.hsllib"] = str(Path(self.libhsl_dir) / "lib" / "libcoinhsl.so")
+
         if warm:
             option["ipopt.mu_init"] = 1e-6
             option["ipopt.bound_relax_factor"] = 1e-9

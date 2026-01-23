@@ -31,7 +31,7 @@ For the full method, results, and hardware validation, see the paper: [PolyFly: 
 ---
 
 ## Important Notes 
-- By default, the code uses the MA57 solver. This is significantly faster than the default solvers. Refer to README_INSTALL_HSL on how to set this up. If you are unable to get access to this solver, comment out `ipopt.linear_solver": "ma57` in planner.py.
+- By default, the code uses the MA57 solver. This is significantly faster than the default solvers. Refer to README_INSTALL_HSL on how to set this up.
 
 ## Quick Start (Docker)
 
