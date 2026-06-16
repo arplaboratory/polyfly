@@ -82,16 +82,6 @@ Run
 ```
 to generate trajectories through a randomly generated forest, with different robot start and end positions
 
-## Parallel Computation To SpeedUp Data Generation
-If you'd like to use PolyFly to generate a large number of trajectories (eg. for imitation learning), we offer support to run multiple solver instances in parallel. 
-Pass in the `--mp` flag to use multiprocessing, and specify the number of environments via the `--n` arg. 
-
-For example 
-```
-./scripts/run_generate_forest.sh -n 5 --mp --forest-type 0
-``` 
-will run multiple solver instances (the number is determined based on the available CPU cores) for 5 randomly generated environments. This results in an effective speed up of about 5-10x. Results are saved in the associated csv directory. 
-
 ## Custom Obstacles 
 The obstacles are defined through yaml files located in the `data/params` directory. To create a new custom environment
 1) Create a new directory, eg. `myexp` under `data/params`. This would be `data/params/myexp`
